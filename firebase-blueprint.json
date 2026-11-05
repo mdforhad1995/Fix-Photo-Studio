@@ -1,0 +1,378 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public/workspace profile for FixPhoto Studio registered clients and studio administrators.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "companyName": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 120
+        },
+        "role": {
+          "type": "string",
+          "enum": ["client", "admin"]
+        },
+        "planTier": {
+          "type": "string",
+          "enum": ["starter", "studio_pro", "enterprise"]
+        },
+        "billingCycle": {
+          "type": "string",
+          "enum": ["monthly", "annual"]
+        },
+        "monthlyQuota": {
+          "type": "number"
+        },
+        "usedCredits": {
+          "type": "number"
+        },
+        "mfaEnabled": {
+          "type": "boolean"
+        },
+        "mfaMethod": {
+          "type": "string",
+          "enum": ["none", "totp_authenticator", "sms_backup"]
+        },
+        "mfaSecretHint": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 32
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "companyName",
+        "role",
+        "planTier",
+        "billingCycle",
+        "monthlyQuota",
+        "usedCredits",
+        "mfaEnabled",
+        "mfaMethod",
+        "mfaSecretHint",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Isolated PII storage for client email, phone, billing address, and MFA recovery hash.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 254
+        },
+        "phone": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 40
+        },
+        "billingAddress": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 300
+        },
+        "mfaRecoveryCodeHash": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uid",
+        "email",
+        "phone",
+        "billingAddress",
+        "mfaRecoveryCodeHash",
+        "updatedAt"
+      ]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Client photo editing engagement order with automated batch upload metadata and real-time pipeline status.",
+      "type": "object",
+      "properties": {
+        "orderNumber": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 32
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "clientName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "projectTitle": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 140
+        },
+        "serviceCategory": {
+          "type": "string",
+          "enum": [
+            "clipping_path",
+            "ghost_mannequin",
+            "jewelry_retouch",
+            "beauty_high_end",
+            "ecommerce_shadow",
+            "color_variants"
+          ]
+        },
+        "imageCount": {
+          "type": "number"
+        },
+        "turnaroundHours": {
+          "type": "number"
+        },
+        "outputFormat": {
+          "type": "string",
+          "enum": ["PSD_LAYERED", "PNG_TRANSPARENT", "TIFF_16BIT", "JPG_SRGB"]
+        },
+        "backgroundSpec": {
+          "type": "string",
+          "enum": [
+            "PURE_WHITE_FFFFFF",
+            "TRANSPARENT",
+            "NATURAL_SHADOW",
+            "ORIGINAL_KEEP_PATH"
+          ]
+        },
+        "instructions": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 2000
+        },
+        "totalPrice": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "queued",
+            "ingesting",
+            "clipping",
+            "retouching",
+            "qa_review",
+            "completed"
+          ]
+        },
+        "progressPercent": {
+          "type": "number"
+        },
+        "uploadedBatchNames": {
+          "type": "array",
+          "maxLength": 10
+        },
+        "deliveryReady": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "orderNumber",
+        "clientId",
+        "clientName",
+        "projectTitle",
+        "serviceCategory",
+        "imageCount",
+        "turnaroundHours",
+        "outputFormat",
+        "backgroundSpec",
+        "instructions",
+        "totalPrice",
+        "status",
+        "progressPercent",
+        "uploadedBatchNames",
+        "deliveryReady",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "OrderMessage": {
+      "title": "OrderMessage",
+      "description": "Direct chat support message inside an active photo editing order.",
+      "type": "object",
+      "properties": {
+        "orderId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "clientId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "senderId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "senderName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "senderRole": {
+          "type": "string",
+          "enum": ["client", "specialist"]
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1500
+        },
+        "attachmentName": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 160
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "orderId",
+        "clientId",
+        "senderId",
+        "senderName",
+        "senderRole",
+        "body",
+        "attachmentName",
+        "createdAt"
+      ]
+    },
+    "NotificationAlert": {
+      "title": "NotificationAlert",
+      "description": "Client notification center alert for project status updates, MFA events, and payment confirmation receipts.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "order_status",
+            "payment_receipt",
+            "security_mfa",
+            "delivery_ready"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 140
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600
+        },
+        "amountFormatted": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 40
+        },
+        "invoiceRef": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 64
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "userId",
+        "type",
+        "title",
+        "message",
+        "amountFormatted",
+        "invoiceRef",
+        "read",
+        "createdAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Client workspace profiles and subscription quota state."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivateInfo" },
+      "description": "Isolated PII storage for client contact and billing details."
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Client photo editing orders and real-time production status."
+    },
+    "/orders/{orderId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/OrderMessage" },
+      "description": "Direct integrated chat support messages for an order."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/NotificationAlert" },
+      "description": "Project status alerts and payment confirmation receipts."
+    }
+  }
+}

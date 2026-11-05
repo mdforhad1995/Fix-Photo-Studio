@@ -1,0 +1,6 @@
+{
+  "name": "FixPhoto Studio — Commercial Photo Editing & Retouching Agency",
+  "description": "High-volume commercial photo editing, clipping path, ghost mannequin, jewelry retouching, and client workflow portal for e-commerce studios and global brands.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

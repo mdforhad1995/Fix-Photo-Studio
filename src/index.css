@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+    --fps-navy: #001E5A;
+    --fps-azure: #0088FF;
+    --fps-cyan: #00B8FF;
+    --fps-canvas: #F5F9FD;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: #F5F9FD;
+    color: #0B1933;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4 {
+    text-wrap: balance;
+  }
+}
+
+.font-mono-tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}

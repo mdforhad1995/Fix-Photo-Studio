@@ -1,0 +1,357 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // Global Primitives & Identity Helpers
+    // =========================================================================
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    // Zero-lookup admin check safe for list queries
+    function isBootstrappedAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'asiaclipp@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerifiedUser() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // =========================================================================
+    // Validation Blueprints (Anti-Update-Gap)
+    // =========================================================================
+
+    function isValidUserProfile(data) {
+      return data.keys().hasAll([
+          'uid', 'displayName', 'companyName', 'role',
+          'planTier', 'billingCycle', 'monthlyQuota', 'usedCredits',
+          'mfaEnabled', 'mfaMethod', 'mfaSecretHint', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid', 'displayName', 'companyName', 'role',
+          'planTier', 'billingCycle', 'monthlyQuota', 'usedCredits',
+          'mfaEnabled', 'mfaMethod', 'mfaSecretHint', 'createdAt', 'updatedAt'
+        ]) &&
+        data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.uid == request.auth.uid &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+        data.companyName is string && data.companyName.size() >= 0 && data.companyName.size() <= 120 &&
+        data.role is string && data.role in ['client', 'admin'] &&
+        data.planTier is string && data.planTier in ['starter', 'studio_pro', 'enterprise'] &&
+        data.billingCycle is string && data.billingCycle in ['monthly', 'annual'] &&
+        data.monthlyQuota is number && data.monthlyQuota >= 0 && data.monthlyQuota <= 100000 &&
+        data.usedCredits is number && data.usedCredits >= 0 && data.usedCredits <= 100000 &&
+        data.mfaEnabled is bool &&
+        data.mfaMethod is string && data.mfaMethod in ['none', 'totp_authenticator', 'sms_backup'] &&
+        data.mfaSecretHint is string && data.mfaSecretHint.size() >= 0 && data.mfaSecretHint.size() <= 32 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivateInfo(data) {
+      return data.keys().hasAll([
+          'uid', 'email', 'phone', 'billingAddress', 'mfaRecoveryCodeHash', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid', 'email', 'phone', 'billingAddress', 'mfaRecoveryCodeHash', 'updatedAt'
+        ]) &&
+        data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.uid == request.auth.uid &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 254 &&
+        data.phone is string && data.phone.size() >= 0 && data.phone.size() <= 40 &&
+        data.billingAddress is string && data.billingAddress.size() >= 0 && data.billingAddress.size() <= 300 &&
+        data.mfaRecoveryCodeHash is string && data.mfaRecoveryCodeHash.size() >= 0 && data.mfaRecoveryCodeHash.size() <= 128 &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll([
+          'orderNumber', 'clientId', 'clientName', 'projectTitle', 'serviceCategory',
+          'imageCount', 'turnaroundHours', 'outputFormat', 'backgroundSpec',
+          'instructions', 'totalPrice', 'status', 'progressPercent',
+          'uploadedBatchNames', 'deliveryReady', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'orderNumber', 'clientId', 'clientName', 'projectTitle', 'serviceCategory',
+          'imageCount', 'turnaroundHours', 'outputFormat', 'backgroundSpec',
+          'instructions', 'totalPrice', 'status', 'progressPercent',
+          'uploadedBatchNames', 'deliveryReady', 'createdAt', 'updatedAt'
+        ]) &&
+        data.orderNumber is string && data.orderNumber.size() >= 3 && data.orderNumber.size() <= 32 &&
+        data.clientId is string && data.clientId.size() >= 1 && data.clientId.size() <= 128 && data.clientId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.clientName is string && data.clientName.size() >= 1 && data.clientName.size() <= 100 &&
+        data.projectTitle is string && data.projectTitle.size() >= 2 && data.projectTitle.size() <= 140 &&
+        data.serviceCategory is string && data.serviceCategory in [
+          'clipping_path', 'ghost_mannequin', 'jewelry_retouch',
+          'beauty_high_end', 'ecommerce_shadow', 'color_variants'
+        ] &&
+        data.imageCount is number && data.imageCount >= 1 && data.imageCount <= 10000 &&
+        data.turnaroundHours is number && data.turnaroundHours >= 4 && data.turnaroundHours <= 168 &&
+        data.outputFormat is string && data.outputFormat in ['PSD_LAYERED', 'PNG_TRANSPARENT', 'TIFF_16BIT', 'JPG_SRGB'] &&
+        data.backgroundSpec is string && data.backgroundSpec in [
+          'PURE_WHITE_FFFFFF', 'TRANSPARENT', 'NATURAL_SHADOW', 'ORIGINAL_KEEP_PATH'
+        ] &&
+        data.instructions is string && data.instructions.size() >= 0 && data.instructions.size() <= 2000 &&
+        data.totalPrice is number && data.totalPrice >= 0 && data.totalPrice <= 1000000 &&
+        data.status is string && data.status in [
+          'queued', 'ingesting', 'clipping', 'retouching', 'qa_review', 'completed'
+        ] &&
+        data.progressPercent is number && data.progressPercent >= 0 && data.progressPercent <= 100 &&
+        data.uploadedBatchNames is list && data.uploadedBatchNames.size() <= 10 &&
+        (data.uploadedBatchNames.size() == 0 || (data.uploadedBatchNames[0] is string && data.uploadedBatchNames[0].size() <= 160)) &&
+        data.deliveryReady is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidOrderMessage(data) {
+      return data.keys().hasAll([
+          'orderId', 'clientId', 'senderId', 'senderName', 'senderRole', 'body', 'attachmentName', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'orderId', 'clientId', 'senderId', 'senderName', 'senderRole', 'body', 'attachmentName', 'createdAt'
+        ]) &&
+        data.orderId is string && data.orderId.size() >= 1 && data.orderId.size() <= 128 && data.orderId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.clientId is string && data.clientId.size() >= 1 && data.clientId.size() <= 128 && data.clientId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.senderId is string && data.senderId.size() >= 1 && data.senderId.size() <= 128 && data.senderId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.senderId == request.auth.uid &&
+        data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 100 &&
+        data.senderRole is string && data.senderRole in ['client', 'specialist'] &&
+        data.body is string && data.body.size() >= 1 && data.body.size() <= 1500 &&
+        data.attachmentName is string && data.attachmentName.size() >= 0 && data.attachmentName.size() <= 160 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidNotificationAlert(data) {
+      return data.keys().hasAll([
+          'userId', 'type', 'title', 'message', 'amountFormatted', 'invoiceRef', 'read', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'type', 'title', 'message', 'amountFormatted', 'invoiceRef', 'read', 'createdAt'
+        ]) &&
+        data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 && data.userId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.type is string && data.type in ['order_status', 'payment_receipt', 'security_mfa', 'delivery_ready'] &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 140 &&
+        data.message is string && data.message.size() >= 1 && data.message.size() <= 600 &&
+        data.amountFormatted is string && data.amountFormatted.size() >= 0 && data.amountFormatted.size() <= 40 &&
+        data.invoiceRef is string && data.invoiceRef.size() >= 0 && data.invoiceRef.size() <= 64 &&
+        data.read is bool &&
+        data.createdAt is timestamp;
+    }
+
+    // =========================================================================
+    // Collection Match Blocks
+    // =========================================================================
+
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && (isOwner(adminId) || isAdmin());
+      allow list, create, update, delete: if false;
+    }
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isBootstrappedAdmin() && existing().uid is string;
+
+      allow create: if isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (incoming().role == 'client' || isAdmin());
+
+      allow update: if isVerifiedUser() &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() ||
+          (
+            isOwner(userId) &&
+            incoming().role == existing().role &&
+            (
+              // Action 1: Update profile & company info
+              incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'companyName', 'updatedAt']) ||
+              // Action 2: Update subscription billing plan or quota credits
+              incoming().diff(existing()).affectedKeys().hasOnly(['planTier', 'billingCycle', 'monthlyQuota', 'usedCredits', 'updatedAt']) ||
+              // Action 3: Update Multi-Factor Authentication (MFA) security settings
+              incoming().diff(existing()).affectedKeys().hasOnly(['mfaEnabled', 'mfaMethod', 'mfaSecretHint', 'updatedAt'])
+            )
+          )
+        );
+
+      allow delete: if false;
+
+      // Split Collection for PII Isolation
+      match /private/{docId} {
+        allow get: if isValidId(userId) && isValidId(docId) && (isOwner(userId) || isAdmin());
+        allow list: if false;
+
+        allow create: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(docId) &&
+          docId == 'info' &&
+          isValidUserPrivateInfo(incoming()) &&
+          incoming().updatedAt == request.time &&
+          exists(/databases/$(database)/documents/users/$(userId));
+
+        allow update: if isVerifiedUser() &&
+          isValidId(userId) &&
+          isValidId(docId) &&
+          docId == 'info' &&
+          isValidUserPrivateInfo(incoming()) &&
+          incoming().uid == existing().uid &&
+          incoming().updatedAt == request.time && (
+            isAdmin() ||
+            (
+              isOwner(userId) &&
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'email', 'phone', 'billingAddress', 'mfaRecoveryCodeHash', 'updatedAt'
+              ])
+            )
+          );
+
+        allow delete: if false;
+      }
+    }
+
+    match /orders/{orderId} {
+      allow get: if isValidId(orderId) && (
+        (isVerifiedUser() && existing().clientId == request.auth.uid) || isAdmin()
+      );
+
+      // Pillar 8: Query Enforcer (no get/exists inside list)
+      allow list: if isVerifiedUser() && (
+        existing().clientId == request.auth.uid || isBootstrappedAdmin()
+      );
+
+      allow create: if isVerifiedUser() &&
+        isValidId(orderId) &&
+        isValidOrder(incoming()) &&
+        incoming().clientId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+
+      allow update: if isVerifiedUser() &&
+        isValidId(orderId) &&
+        isValidOrder(incoming()) &&
+        incoming().clientId == existing().clientId &&
+        incoming().orderNumber == existing().orderNumber &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() ||
+          (
+            existing().clientId == request.auth.uid &&
+            // Pillar 4 & 6: Terminal State Locking (cannot mutate once completed)
+            existing().status != 'completed' &&
+            (
+              // Action 1: Advance pipeline progress or stage simulation
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'status', 'progressPercent', 'deliveryReady', 'updatedAt'
+              ]) ||
+              // Action 2: Update order instructions or uploaded batch file list
+              incoming().diff(existing()).affectedKeys().hasOnly([
+                'instructions', 'uploadedBatchNames', 'updatedAt'
+              ])
+            )
+          )
+        );
+
+      allow delete: if false;
+
+      // Subcollection: Integrated Chat Support Messages
+      match /messages/{messageId} {
+        allow get: if isValidId(orderId) && isValidId(messageId) && isVerifiedUser() && (
+          existing().clientId == request.auth.uid ||
+          existing().senderId == request.auth.uid ||
+          isAdmin()
+        );
+
+        // Pillar 8: Secure List Query using resource.data (zero get/exists calls)
+        allow list: if isVerifiedUser() && (
+          existing().clientId == request.auth.uid ||
+          existing().senderId == request.auth.uid ||
+          isBootstrappedAdmin()
+        );
+
+        allow create: if isVerifiedUser() &&
+          isValidId(orderId) &&
+          isValidId(messageId) &&
+          isValidOrderMessage(incoming()) &&
+          incoming().orderId == orderId &&
+          incoming().createdAt == request.time &&
+          exists(/databases/$(database)/documents/orders/$(orderId)) && (
+            (
+              get(/databases/$(database)/documents/orders/$(orderId)).data.clientId == request.auth.uid &&
+              incoming().clientId == request.auth.uid
+            ) ||
+            isAdmin()
+          );
+
+        allow update, delete: if false;
+      }
+    }
+
+    match /notifications/{notificationId} {
+      allow get: if isValidId(notificationId) && isVerifiedUser() && (
+        existing().userId == request.auth.uid || isAdmin()
+      );
+
+      // Pillar 8: Query Enforcer (no get/exists inside list)
+      allow list: if isVerifiedUser() && (
+        existing().userId == request.auth.uid || isBootstrappedAdmin()
+      );
+
+      allow create: if isVerifiedUser() &&
+        isValidId(notificationId) &&
+        isValidNotificationAlert(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+
+      allow update: if isVerifiedUser() &&
+        isValidId(notificationId) &&
+        isValidNotificationAlert(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt && (
+          isAdmin() ||
+          (
+            existing().userId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['read'])
+          )
+        );
+
+      allow delete: if false;
+    }
+  }
+}

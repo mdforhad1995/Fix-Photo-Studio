@@ -1728,46 +1728,36 @@ export const PIPELINE_STAGES: {
   description: string;
 }[] = [
   {
-    status: 'queued',
-    stepIndex: '01',
-    label: 'Order Queued',
-    progress: 12,
-    description: 'Order specifications verified and assigned to dedicated retouching pod.',
-  },
-  {
     status: 'ingesting',
-    stepIndex: '02',
-    label: 'RAW Ingest & Color Check',
-    progress: 28,
-    description: 'Checksum validation, ICC profile inspection, and style guide mapping.',
-  },
-  {
-    status: 'clipping',
-    stepIndex: '03',
-    label: 'Hand Bezier Clipping',
-    progress: 52,
-    description: 'Pen-tool vector path isolation and multi-channel alpha masking.',
+    stepIndex: '01',
+    label: 'Order Received',
+    progress: 25,
+    description:
+      'Order received and verified by FixPhoto Studio Admin.',
   },
   {
     status: 'retouching',
-    stepIndex: '04',
-    label: 'Senior Retouching',
-    progress: 76,
-    description: 'Frequency separation, ghost mannequin composite, and specular polishing.',
+    stepIndex: '02',
+    label: 'Start Working',
+    progress: 50,
+    description:
+      'Dedicated studio specialists have started working on your files.',
   },
   {
     status: 'qa_review',
-    stepIndex: '05',
-    label: 'Dual 400% QA Audit',
-    progress: 92,
-    description: 'Pixel-level edge inspection at 400% zoom and marketplace spec verification.',
+    stepIndex: '03',
+    label: 'Quality Control Processing',
+    progress: 75,
+    description:
+      'Quality Control team is inspecting and verifying all edited files.',
   },
   {
     status: 'completed',
-    stepIndex: '06',
-    label: 'Delivery Ready',
+    stepIndex: '04',
+    label: 'Ready for Delivery',
     progress: 100,
-    description: 'Encrypted master archive ready for instant client download.',
+    description:
+      'Your edited files are complete and your download link is ready for delivery.',
   },
 ];
 

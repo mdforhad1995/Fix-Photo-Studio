@@ -57,11 +57,22 @@ export interface UserPrivateInfoDoc {
   updatedAt: Timestamp | Date;
 }
 
+export type InvoicePaymentStatus = 'pending' | 'paid';
+export type InvoicePaymentTerms = 'Monthly' | 'Project';
+export type InvoicePaymentOption = 'PayPal' | 'Bank';
+
 export interface OrderDoc {
   id: string;
   orderNumber: string;
   clientId: string;
   clientName: string;
+  clientEmail?: string;
+  clientPhone?: string;
+  companyName?: string;
+  clientAddress?: string;
+  clientWebsite?: string;
+  paymentTerms?: InvoicePaymentTerms;
+  paymentOption?: InvoicePaymentOption;
   projectTitle: string;
   serviceCategory: ServiceCategory;
   imageCount: number;
@@ -74,6 +85,8 @@ export interface OrderDoc {
   progressPercent: number;
   uploadedBatchNames: string[];
   deliveryReady: boolean;
+  deliveryDownloadUrl?: string;
+  deliveryEmailSent?: boolean;
   createdAt: Timestamp | Date;
   updatedAt: Timestamp | Date;
 }
@@ -124,18 +137,24 @@ export interface PortfolioItem {
 
 export type QueryStatus = 'new' | 'contacted' | 'resolved';
 
-export type InvoicePaymentStatus = 'pending' | 'paid';
-
 export interface InvoicePaymentInfo {
   companyName?: string;
+  contactPerson?: string;
   companyTagline?: string;
   companyAddress?: string;
+  companyCountry?: string;
   companyPhone?: string;
   taxRatePercent?: number;
+  defaultPaymentTerms?: InvoicePaymentTerms;
+  defaultPaymentOption?: InvoicePaymentOption;
   invoiceNotesAndTerms?: string;
   bankName: string;
   accountHolderName: string;
   accountNumberOrIban: string;
+  bankBranch?: string;
+  branchCode?: string;
+  swiftCode?: string;
+  routingNumber?: string;
   routingOrSwiftCode: string;
   paypalEmail: string;
   payoneerOrWiseEmail: string;

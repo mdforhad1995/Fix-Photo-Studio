@@ -22,6 +22,12 @@ interface GetQuotePageProps {
   onClose?: () => void;
   services: ServiceDefinition[];
   isAuthenticatedClient?: boolean;
+  clientProfileData?: {
+    name: string;
+    email: string;
+    phone: string;
+    companyName: string;
+  };
   onSubmitQuoteOrder: (payload: {
     projectTitle: string;
     serviceCategory: ServiceCategory;
@@ -32,6 +38,10 @@ interface GetQuotePageProps {
     instructions: string;
     totalPrice: number;
     uploadedBatchNames: string[];
+    clientName?: string;
+    clientEmail?: string;
+    clientPhone?: string;
+    companyName?: string;
   }) => Promise<void>;
   onSubmitPublicQuery?: (payload: {
     clientName: string;
@@ -63,20 +73,32 @@ export const GetQuotePage: React.FC<GetQuotePageProps> = ({
   onClose,
   services,
   isAuthenticatedClient = false,
+  clientProfileData,
   onSubmitQuoteOrder,
   onSubmitPublicQuery,
   onOpenFreeTrial,
   onBackToHome,
 }) => {
-  const [clientName, setClientName] = useState('');
-  const [workEmail, setWorkEmail] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [companyName, setCompanyName] = useState('');
+  const [clientName, setClientName] = useState(clientProfileData?.name || '');
+  const [workEmail, setWorkEmail] = useState(clientProfileData?.email || '');
+  const [phoneNumber, setPhoneNumber] = useState(clientProfileData?.phone || '');
+  const [companyName, setCompanyName] = useState(
+    clientProfileData?.companyName || ''
+  );
   const [projectTitle, setProjectTitle] = useState('');
   const [turnaroundHours] = useState<number>(24);
   const [outputFormat] = useState<OutputFormat>('PSD_LAYERED');
   const [backgroundSpec] = useState<BackgroundSpec>('PURE_WHITE_FFFFFF');
   const [notes, setNotes] = useState('');
+
+  useEffect(() => {
+    if (isAuthenticatedClient && clientProfileData) {
+      setClientName(clientProfileData.name || '');
+      setWorkEmail(clientProfileData.email || '');
+      setPhoneNumber(clientProfileData.phone || '');
+      setCompanyName(clientProfileData.companyName || '');
+    }
+  }, [isAuthenticatedClient, clientProfileData]);
 
   const [lineItems, setLineItems] = useState<QuoteLineItem[]>([]);
 
@@ -308,8 +330,36 @@ export const GetQuotePage: React.FC<GetQuotePageProps> = ({
     e.preventDefault();
     setErrorMsg(null);
 
-    if (clientName.trim().length < 2 || !workEmail.includes('@')) {
+    const effectiveName = (
+      isAuthenticatedClient && clientProfileData?.name
+        ? clientProfileData.name
+        : clientName
+    ).trim();
+    const effectiveEmail = (
+      isAuthenticatedClient && clientProfileData?.email
+        ? clientProfileData.email
+        : workEmail
+    ).trim();
+    const effectivePhone = (
+      isAuthenticatedClient && clientProfileData?.phone
+        ? clientProfileData.phone
+        : phoneNumber
+    ).trim();
+    const effectiveCompany = (
+      isAuthenticatedClient && clientProfileData?.companyName
+        ? clientProfileData.companyName
+        : companyName
+    ).trim();
+
+    if (effectiveName.length < 2 || !effectiveEmail.includes('@')) {
       setErrorMsg('Please enter your name and work email to lock your custom quote.');
+      return;
+    }
+
+    if (!isAuthenticatedClient && effectivePhone.length < 4) {
+      setErrorMsg(
+        'Please enter your Phone / WhatsApp number so our studio desk can confirm your quote.'
+      );
       return;
     }
 
@@ -375,10 +425,10 @@ export const GetQuotePage: React.FC<GetQuotePageProps> = ({
       let qNum = `FPS-QUOTE-${Math.floor(1000 + Math.random() * 9000)}`;
       if (onSubmitPublicQuery) {
         const res = await onSubmitPublicQuery({
-          clientName: clientName.trim(),
-          clientEmail: workEmail.trim(),
-          clientPhone: phoneNumber.trim(),
-          companyName: companyName.trim(),
+          clientName: effectiveName,
+          clientEmail: effectiveEmail,
+          clientPhone: effectivePhone,
+          companyName: effectiveCompany,
           serviceTitle: `${primaryItem.serviceTitle} ($${effectiveNetTotal.toFixed(2)} Quote)`,
           serviceSlug: primaryItem.serviceSlug,
           instructions: `Items: ${breakdownSummary} | Total: $${effectiveNetTotal.toFixed(2)} USD. Notes: ${notes.trim()}`,
@@ -387,32 +437,37 @@ export const GetQuotePage: React.FC<GetQuotePageProps> = ({
         qNum = res.queryNumber;
       }
 
+      const finalTitle =
+        projectTitle.trim() || 'Custom Studio Volume Production Quote';
+      await onSubmitQuoteOrder({
+        projectTitle: `CUSTOM QUOTE (${qNum}) — ${finalTitle} (${
+          effectiveCompany || effectiveName
+        })`,
+        serviceCategory: primaryItem.category,
+        imageCount: effectiveTotalQty,
+        turnaroundHours,
+        outputFormat,
+        backgroundSpec,
+        instructions: `[QUOTE LOCK · ${effectiveName} <${effectiveEmail}>${
+          effectivePhone ? ` · Tel: ${effectivePhone}` : ''
+        }${effectiveCompany ? ` · Co: ${effectiveCompany}` : ''} · ${effectiveDiscPct}% Vol Discount] Items: ${breakdownSummary}.${
+          notes.trim() ? ` Notes: ${notes.trim()}` : ''
+        }`,
+        totalPrice: effectiveNetTotal,
+        uploadedBatchNames: sampleFiles.map((f) => f.name),
+        clientName: effectiveName,
+        clientEmail: effectiveEmail,
+        clientPhone: effectivePhone,
+        companyName: effectiveCompany,
+      });
+
       if (isAuthenticatedClient) {
-        const finalTitle =
-          projectTitle.trim() || 'Custom Studio Volume Production Quote';
-        await onSubmitQuoteOrder({
-          projectTitle: `CUSTOM QUOTE (${qNum}) — ${finalTitle} (${
-            companyName.trim() || clientName.trim()
-          })`,
-          serviceCategory: primaryItem.category,
-          imageCount: effectiveTotalQty,
-          turnaroundHours,
-          outputFormat,
-          backgroundSpec,
-          instructions: `[QUOTE LOCK · ${clientName.trim()} <${workEmail.trim()}>${
-            phoneNumber.trim() ? ` · Tel: ${phoneNumber.trim()}` : ''
-          } · ${effectiveDiscPct}% Vol Discount] Items: ${breakdownSummary}.${
-            notes.trim() ? ` Notes: ${notes.trim()}` : ''
-          }`,
-          totalPrice: effectiveNetTotal,
-          uploadedBatchNames: sampleFiles.map((f) => f.name),
-        });
         handleDismiss();
       } else {
         setSubmittedNotice({
           queryNumber: qNum,
-          clientName: clientName.trim(),
-          clientEmail: workEmail.trim(),
+          clientName: effectiveName,
+          clientEmail: effectiveEmail,
         });
       }
     } catch {
@@ -451,58 +506,84 @@ export const GetQuotePage: React.FC<GetQuotePageProps> = ({
         >
           {/* Left 7 Columns: Contact, Line-Item Builder & Sample Image Upload */}
           <div className="lg:col-span-7 space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                  Your Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                  placeholder="Sarah Jenkins"
-                  className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
-                />
+            {isAuthenticatedClient && clientProfileData?.email ? (
+              <div className="p-3.5 rounded-xl bg-[#EAF3FC] border border-[#B8D0EB] flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-[#0088FF] shrink-0" />
+                  <div>
+                    <p className="text-[11px] font-bold text-[#001E5A]">
+                      Ordering with Your Logged-In Profile (Auto-Filled)
+                    </p>
+                    <p className="text-[11px] text-slate-600 font-mono-tabular">
+                      {clientProfileData.name} · {clientProfileData.email}
+                      {clientProfileData.phone
+                        ? ` · ${clientProfileData.phone}`
+                        : ''}
+                      {clientProfileData.companyName
+                        ? ` · ${clientProfileData.companyName}`
+                        : ''}
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-white border border-[#DCE6F2] text-[10px] font-bold text-[#0088FF]">
+                  Profile Linked
+                </span>
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                  Work Email *
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={workEmail}
-                  onChange={(e) => setWorkEmail(e.target.value)}
-                  placeholder="sarah@retailbrand.com"
-                  className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
-                />
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                    Your Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
+                    placeholder="Sarah Jenkins"
+                    className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                    Work Email *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={workEmail}
+                    onChange={(e) => setWorkEmail(e.target.value)}
+                    placeholder="sarah@retailbrand.com"
+                    className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                    Phone / WhatsApp Number *
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    placeholder="+1 (212) 555-0194"
+                    className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                    Company / Agency
+                  </label>
+                  <input
+                    type="text"
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    placeholder="Veloce Commerce"
+                    className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                  Phone / WhatsApp Number
-                </label>
-                <input
-                  type="tel"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  placeholder="+1 (212) 555-0194"
-                  className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                  Company / Agency
-                </label>
-                <input
-                  type="text"
-                  value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
-                  placeholder="Veloce Commerce"
-                  className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
-                />
-              </div>
-            </div>
+            )}
 
             {/* Multi-Service Line Item Builder */}
             <div className="p-4 rounded-xl bg-[#F5F9FD] border border-[#DCE6F2] space-y-3">

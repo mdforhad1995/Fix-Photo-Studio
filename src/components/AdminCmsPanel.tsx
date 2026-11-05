@@ -40,6 +40,8 @@ import {
   NotificationAlertDoc,
   InvoicePaymentInfo,
   InvoicePaymentStatus,
+  InvoicePaymentTerms,
+  InvoicePaymentOption,
   ClientQueryItem,
   QueryStatus,
 } from '../types';
@@ -178,13 +180,22 @@ interface AdminCmsPanelProps {
   onApproveOrder: (order: OrderDoc) => Promise<void>;
   onSetOrderStage: (
     order: OrderDoc,
-    targetStatus: OrderStatus | 'pending_approval'
+    targetStatus: OrderStatus | 'pending_approval',
+    deliveryDownloadUrl?: string
   ) => Promise<void>;
   onAdvanceOrderStage: (order: OrderDoc) => Promise<void>;
   onUpdateOrderInvoiceDetails?: (
     orderId: string,
     updates: {
       clientName?: string;
+      clientEmail?: string;
+      clientPhone?: string;
+      companyName?: string;
+      clientAddress?: string;
+      clientWebsite?: string;
+      paymentTerms?: InvoicePaymentTerms;
+      paymentOption?: InvoicePaymentOption;
+      deliveryDownloadUrl?: string;
       projectTitle?: string;
       imageCount?: number;
       totalPrice?: number;
@@ -2744,17 +2755,17 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                             </div>
                           </div>
 
-                          {/* Bottom Row: Customer Work Process Stage Tracker & 1-Click Stage Selector */}
-                          <div className="space-y-2.5">
+                          {/* Bottom Row: 4-Stage Customer Work Process Tracker & Ready for Delivery Link */}
+                          <div className="space-y-3">
                             <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                               <span className="font-bold text-[#001E5A]">
-                                Customer Work Process Stage (Click any stage to update Client Portal):
+                                Real-Time Production Stage Progression (Select any of the 4 stages to update Client Portal):
                               </span>
                               <div className="flex items-center gap-2">
                                 <span className="font-mono-tabular text-[#0088FF] font-semibold">
-                                  Current Process:{' '}
+                                  Current Status:{' '}
                                   {isPendingApproval
-                                    ? 'Pending Approval (0%)'
+                                    ? '1. Order Status: Pending (0%)'
                                     : `${activeStageObj?.stepIndex || ''} ${
                                         activeStageObj?.label || ord.status
                                       } (${ord.progressPercent}%)`}
@@ -2769,7 +2780,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                                     if (isPendingApproval) {
                                       await onApproveOrder(ord);
                                       notifySaved(
-                                        `Approved ${ord.orderNumber} and started Stage 01 (Order Queued 12%).`
+                                        `Order ${ord.orderNumber} marked as Received (Stage 01 · 25%).`
                                       );
                                     } else {
                                       await onAdvanceOrderStage(ord);
@@ -2781,59 +2792,82 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                                   className="px-3 py-1 text-[11px] font-bold text-white bg-[#001E5A] hover:bg-[#0088FF] disabled:opacity-40 rounded-md transition-colors"
                                 >
                                   {isPendingApproval
-                                    ? 'Approve & Start Stage 01 →'
+                                    ? 'Mark Order Received →'
                                     : ord.status === 'completed'
-                                    ? '100% Completed ✓'
+                                    ? 'Ready for Delivery ✓'
                                     : 'Advance Next Stage →'}
                                 </button>
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+                              {/* 1a. Order Status: Pending */}
                               <button
                                 type="button"
                                 onClick={async () => {
                                   await onSetOrderStage(ord, 'pending_approval');
                                   notifySaved(
-                                    `Set ${ord.orderNumber} to Pending Approval (0%).`
+                                    `Set ${ord.orderNumber} to Order Status: Pending.`
                                   );
                                 }}
-                                className={`p-2.5 rounded-lg border text-left text-xs transition-colors ${
+                                className={`p-3 rounded-lg border text-left text-xs transition-colors ${
                                   isPendingApproval
                                     ? 'bg-amber-500 text-white border-amber-600 font-bold shadow-xs'
                                     : 'bg-white text-slate-600 border-slate-200 hover:border-amber-400'
                                 }`}
                               >
                                 <div className="font-mono-tabular text-[10px] opacity-85">
-                                  00 · 0%
+                                  01a · PENDING
                                 </div>
                                 <div className="font-semibold mt-0.5 leading-tight">
-                                  Pending Approval
+                                  1. Order Status: Pending
                                 </div>
                               </button>
 
+                              {/* 1b, 2, 3, 4 Stages */}
                               {PIPELINE_STAGES.map((st, idx) => {
-                                const currentIdx = isPendingApproval
+                                const mappedOrdIdx = isPendingApproval
                                   ? -1
-                                  : PIPELINE_STAGES.findIndex(
-                                      (s) => s.status === ord.status
-                                    );
+                                  : ord.status === 'queued' ||
+                                    ord.status === 'ingesting'
+                                  ? 0
+                                  : ord.status === 'clipping' ||
+                                    ord.status === 'retouching'
+                                  ? 1
+                                  : ord.status === 'qa_review'
+                                  ? 2
+                                  : ord.status === 'completed'
+                                  ? 3
+                                  : 0;
                                 const isCurrent =
-                                  !isPendingApproval && idx === currentIdx;
+                                  !isPendingApproval && idx === mappedOrdIdx;
                                 const isPassed =
-                                  !isPendingApproval && idx < currentIdx;
+                                  !isPendingApproval && idx < mappedOrdIdx;
+
+                                const btnLabel =
+                                  idx === 0
+                                    ? '1. Order Status: Received'
+                                    : `${idx + 1}. ${st.label}`;
 
                                 return (
                                   <button
                                     key={st.status}
                                     type="button"
                                     onClick={async () => {
-                                      await onSetOrderStage(ord, st.status);
+                                      await onSetOrderStage(
+                                        ord,
+                                        st.status,
+                                        st.status === 'completed'
+                                          ? ord.deliveryDownloadUrl
+                                          : undefined
+                                      );
                                       notifySaved(
-                                        `Updated ${ord.orderNumber} work process to "${st.label}" (${st.progress}%)!`
+                                        st.status === 'completed'
+                                          ? `Order ${ord.orderNumber} set to "4. Ready for Delivery"! Download link activated in Client Portal & email sent to customer.`
+                                          : `Updated ${ord.orderNumber} to "${btnLabel}" (${st.progress}%)!`
                                       );
                                     }}
-                                    className={`p-2.5 rounded-lg border text-left text-xs transition-colors ${
+                                    className={`p-3 rounded-lg border text-left text-xs transition-colors ${
                                       isCurrent
                                         ? 'bg-[#001E5A] text-white border-[#001E5A] font-bold shadow-xs'
                                         : isPassed
@@ -2846,15 +2880,61 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                                         {st.stepIndex} · {st.progress}%
                                       </span>
                                       {(isCurrent || isPassed) && (
-                                        <CheckCircle2 className="w-3 h-3 shrink-0" />
+                                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                                       )}
                                     </div>
                                     <div className="font-semibold mt-0.5 leading-tight">
-                                      {st.label}
+                                      {btnLabel}
                                     </div>
                                   </button>
                                 );
                               })}
+                            </div>
+
+                            {/* Stage 4: Ready for Delivery — Attach Download Link & Send Email to Customer */}
+                            <div className="p-3.5 rounded-xl bg-white border border-blue-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                              <div className="flex-1 space-y-1">
+                                <label className="block text-[11px] font-bold text-[#001E5A]">
+                                  4. Ready for Delivery — Customer Download Link (Google Drive, Dropbox, WeTransfer, or Direct ZIP URL)
+                                </label>
+                                <input
+                                  type="text"
+                                  value={ord.deliveryDownloadUrl || ''}
+                                  onChange={(e) => {
+                                    if (onUpdateOrderInvoiceDetails) {
+                                      onUpdateOrderInvoiceDetails(ord.id, {
+                                        deliveryDownloadUrl: e.target.value,
+                                      });
+                                    }
+                                  }}
+                                  placeholder="https://drive.google.com/drive/folders/... or https://wetransfer.com/..."
+                                  className="w-full px-3 py-2 text-xs font-mono-tabular bg-[#F8FAFC] border border-slate-300 rounded-lg focus:outline-none focus:border-[#0088FF]"
+                                />
+                              </div>
+
+                              <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    await onSetOrderStage(
+                                      ord,
+                                      'completed',
+                                      ord.deliveryDownloadUrl || ''
+                                    );
+                                    notifySaved(
+                                      `Order ${ord.orderNumber} marked "4. Ready for Delivery"! Download link added to Client Portal and email notification sent to ${
+                                        ord.clientEmail || ord.clientName
+                                      }.`
+                                    );
+                                  }}
+                                  className="px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                  <span>
+                                    Set Ready for Delivery & Send Download Link Email →
+                                  </span>
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -2871,7 +2951,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
              =================================================================== */}
           {activeTab === 'invoices_billing' && (
             <div className="space-y-8">
-              {/* SECTION A: EDIT ORDER INVOICE LINE ITEMS, AMOUNTS & PAID/PENDING STATUS */}
+              {/* SECTION A: EDIT ORDER INVOICE LINE ITEMS, BILL TO FIELDS, PAYMENT TERMS/OPTION & PAID/PENDING STATUS */}
               <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
                   <div>
@@ -2879,11 +2959,11 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                       ADMIN-ONLY INVOICE & LINE ITEM EDITOR (CLIENT READ-ONLY PDF)
                     </p>
                     <h2 className="text-lg font-bold text-[#001E5A]">
-                      Edit Customer Invoice Line Items, Prices, Quantities & Payment Status ({orders.length} Orders)
+                      Edit Customer Invoice Line Items, Payment Terms (Monthly / Project), Payment Option (PayPal / Bank) & BILL TO ({orders.length} Orders)
                     </h2>
                   </div>
                   <span className="text-xs font-mono-tabular text-slate-500">
-                    Clients can only view & download PDF · Only Admin can edit
+                    Only non-empty BILL TO fields are shown on customer invoices
                   </span>
                 </div>
 
@@ -2894,19 +2974,35 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                       invoiceStatusMap[invRef] ||
                       invoiceStatusMap[ord.orderNumber] ||
                       'pending';
+                    const ordPaymentTerms: InvoicePaymentTerms =
+                      ord.paymentTerms ||
+                      invoicePaymentInfo.defaultPaymentTerms ||
+                      'Project';
+                    const ordPaymentOption: InvoicePaymentOption =
+                      ord.paymentOption ||
+                      invoicePaymentInfo.defaultPaymentOption ||
+                      'PayPal';
+
                     return (
                       <div
                         key={ord.id}
-                        className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-3"
+                        className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-3.5"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-2.5">
-                          <div className="flex items-center gap-2 text-xs font-mono-tabular">
+                          <div className="flex flex-wrap items-center gap-2 text-xs font-mono-tabular">
                             <span className="font-bold text-[#001E5A] text-sm">
                               {invRef}
                             </span>
                             <span>·</span>
                             <span className="text-slate-500">
                               Order: {ord.orderNumber}
+                            </span>
+                            <span>·</span>
+                            <span className="px-2 py-0.5 rounded bg-blue-50 text-[#001E5A] border border-blue-200 font-bold text-[11px]">
+                              Terms: {ordPaymentTerms}
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-blue-50 text-[#0088FF] border border-blue-200 font-bold text-[11px]">
+                              Option: {ordPaymentOption}
                             </span>
                             <span>·</span>
                             {ordInvoiceStatus === 'paid' ? (
@@ -2964,24 +3060,54 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                        {/* Row 1: Payment Terms, Payment Option, Project Description, Qty, Amount */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
                           <div>
-                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                              Client Name (Bill To)
+                            <label className="block text-[11px] font-bold text-[#001E5A] mb-1">
+                              Payment Terms
                             </label>
-                            <input
-                              type="text"
-                              value={ord.clientName}
+                            <select
+                              value={ordPaymentTerms}
                               onChange={(e) => {
                                 if (onUpdateOrderInvoiceDetails) {
                                   onUpdateOrderInvoiceDetails(ord.id, {
-                                    clientName: e.target.value,
+                                    paymentTerms: e.target
+                                      .value as InvoicePaymentTerms,
                                   });
                                 }
                               }}
-                              className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
-                            />
+                              className="w-full px-2.5 py-1.5 text-xs font-bold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
+                            >
+                              <option value="Project">Project</option>
+                              <option value="Monthly">Monthly</option>
+                            </select>
                           </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-[#0088FF] mb-1">
+                              Payment Option
+                            </label>
+                            <select
+                              value={ordPaymentOption}
+                              onChange={(e) => {
+                                if (onUpdateOrderInvoiceDetails) {
+                                  onUpdateOrderInvoiceDetails(ord.id, {
+                                    paymentOption: e.target
+                                      .value as InvoicePaymentOption,
+                                  });
+                                }
+                              }}
+                              className="w-full px-2.5 py-1.5 text-xs font-bold text-[#0088FF] bg-white border border-slate-300 rounded-lg"
+                            >
+                              <option value="PayPal">
+                                PayPal ({invoicePaymentInfo.paypalEmail || 'hello@clippasia.com'})
+                              </option>
+                              <option value="Bank">
+                                Bank ({invoicePaymentInfo.bankName || 'Dutch Bangla Bank PLC'})
+                              </option>
+                            </select>
+                          </div>
+
                           <div className="lg:col-span-2">
                             <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                               Invoice Project / Service Description
@@ -2999,6 +3125,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                               className="w-full px-2.5 py-1.5 text-xs font-semibold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
                             />
                           </div>
+
                           <div>
                             <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                               Quantity (Frames)
@@ -3017,6 +3144,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                               className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
                             />
                           </div>
+
                           <div>
                             <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                               Invoice Total Amount ($ USD)
@@ -3037,79 +3165,291 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                             />
                           </div>
                         </div>
+
+                        {/* Row 2: Customer BILL TO Fields (Only non-empty fields are shown on Invoice) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5 pt-2 border-t border-slate-200">
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                              BILL TO · Company Name
+                            </label>
+                            <input
+                              type="text"
+                              value={ord.companyName || ''}
+                              onChange={(e) => {
+                                if (onUpdateOrderInvoiceDetails) {
+                                  onUpdateOrderInvoiceDetails(ord.id, {
+                                    companyName: e.target.value,
+                                  });
+                                }
+                              }}
+                              placeholder="(Blank = hidden)"
+                              className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                              BILL TO · Contact Person
+                            </label>
+                            <input
+                              type="text"
+                              value={ord.clientName || ''}
+                              onChange={(e) => {
+                                if (onUpdateOrderInvoiceDetails) {
+                                  onUpdateOrderInvoiceDetails(ord.id, {
+                                    clientName: e.target.value,
+                                  });
+                                }
+                              }}
+                              placeholder="(Blank = hidden)"
+                              className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                              BILL TO · Address
+                            </label>
+                            <input
+                              type="text"
+                              value={ord.clientAddress || ''}
+                              onChange={(e) => {
+                                if (onUpdateOrderInvoiceDetails) {
+                                  onUpdateOrderInvoiceDetails(ord.id, {
+                                    clientAddress: e.target.value,
+                                  });
+                                }
+                              }}
+                              placeholder="(Blank = hidden)"
+                              className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                              BILL TO · Phone No.
+                            </label>
+                            <input
+                              type="text"
+                              value={ord.clientPhone || ''}
+                              onChange={(e) => {
+                                if (onUpdateOrderInvoiceDetails) {
+                                  onUpdateOrderInvoiceDetails(ord.id, {
+                                    clientPhone: e.target.value,
+                                  });
+                                }
+                              }}
+                              placeholder="(Blank = hidden)"
+                              className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                              BILL TO · Website
+                            </label>
+                            <input
+                              type="text"
+                              value={ord.clientWebsite || ''}
+                              onChange={(e) => {
+                                if (onUpdateOrderInvoiceDetails) {
+                                  onUpdateOrderInvoiceDetails(ord.id, {
+                                    clientWebsite: e.target.value,
+                                  });
+                                }
+                              }}
+                              placeholder="(Blank = hidden)"
+                              className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                              BILL TO · Email
+                            </label>
+                            <input
+                              type="text"
+                              value={ord.clientEmail || ''}
+                              onChange={(e) => {
+                                if (onUpdateOrderInvoiceDetails) {
+                                  onUpdateOrderInvoiceDetails(ord.id, {
+                                    clientEmail: e.target.value,
+                                  });
+                                }
+                              }}
+                              placeholder="(Blank = hidden)"
+                              className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                            />
+                          </div>
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
 
-              {/* SECTION B: COMPANY HEADER, TAX RATE, BANK & PAYMENT INFORMATION EDITOR */}
+              {/* SECTION B: BILL FROM, PAYMENT TERMS / OPTION, PAYPAL & BANK DETAILS EDITOR */}
               <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
                   <div>
                     <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
-                      OFFICIAL INVOICE HEADER, COMPANY DETAILS & PAYMENT REMITTANCE SETUP
+                      OFFICIAL INVOICE BILL FROM & PAYMENT REMITTANCE SETUP
                     </p>
                     <h2 className="text-lg font-bold text-[#001E5A]">
-                      Customize Invoice Company Name, Address, Tax Rate, Terms & Payment Details
+                      Configure BILL FROM, Default Payment Terms (Monthly / Project), PayPal & Bank Details
                     </h2>
                   </div>
                   <FileText className="w-5 h-5 text-[#0088FF]" />
                 </div>
 
-                {/* Row 1: Company Branding & Tax */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Row 1: BILL FROM Details */}
+                <div className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-3">
+                  <p className="text-xs font-bold text-[#001E5A] uppercase font-mono-tabular">
+                    1. BILL FROM (Studio Sender Information)
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                        Company Name
+                      </label>
+                      <input
+                        type="text"
+                        value={invoicePaymentInfo.companyName || 'Fix Photo Studio.'}
+                        onChange={(e) =>
+                          onUpdateInvoicePaymentInfo({
+                            ...invoicePaymentInfo,
+                            companyName: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 text-xs font-bold bg-white border border-slate-300 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                        Contact Person
+                      </label>
+                      <input
+                        type="text"
+                        value={
+                          invoicePaymentInfo.contactPerson ||
+                          'Eng. Md Forhad Hossen.'
+                        }
+                        onChange={(e) =>
+                          onUpdateInvoicePaymentInfo({
+                            ...invoicePaymentInfo,
+                            contactPerson: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                      />
+                    </div>
+                    <div className="lg:col-span-2">
+                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                        Address
+                      </label>
+                      <input
+                        type="text"
+                        value={
+                          invoicePaymentInfo.companyAddress ||
+                          'House 5, Road 5, Block A, Mirpur 1, Dhaka, 1216.'
+                        }
+                        onChange={(e) =>
+                          onUpdateInvoicePaymentInfo({
+                            ...invoicePaymentInfo,
+                            companyAddress: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                        Country & Phone
+                      </label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <input
+                          type="text"
+                          value={invoicePaymentInfo.companyCountry || 'Bangladesh.'}
+                          onChange={(e) =>
+                            onUpdateInvoicePaymentInfo({
+                              ...invoicePaymentInfo,
+                              companyCountry: e.target.value,
+                            })
+                          }
+                          placeholder="Country"
+                          className="w-full px-2.5 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                        />
+                        <input
+                          type="text"
+                          value={invoicePaymentInfo.companyPhone || '+8801911862115'}
+                          onChange={(e) =>
+                            onUpdateInvoicePaymentInfo({
+                              ...invoicePaymentInfo,
+                              companyPhone: e.target.value,
+                            })
+                          }
+                          placeholder="Phone"
+                          className="w-full px-2.5 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Row 2: Default Payment Terms, Default Payment Option & PayPal Account */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Invoice Company Name
+                      Default Payment Terms
                     </label>
-                    <input
-                      type="text"
-                      value={invoicePaymentInfo.companyName || 'FixPhoto Studio Inc.'}
+                    <select
+                      value={invoicePaymentInfo.defaultPaymentTerms || 'Project'}
                       onChange={(e) =>
                         onUpdateInvoicePaymentInfo({
                           ...invoicePaymentInfo,
-                          companyName: e.target.value,
+                          defaultPaymentTerms: e.target
+                            .value as InvoicePaymentTerms,
                         })
                       }
-                      className="w-full px-3 py-2 text-xs font-bold border border-slate-300 rounded-lg"
-                    />
+                      className="w-full px-3 py-2 text-xs font-bold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
+                    >
+                      <option value="Project">Project</option>
+                      <option value="Monthly">Monthly</option>
+                    </select>
                   </div>
+
                   <div>
                     <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Company Address (Shown on Invoice)
+                      Default Payment Option
                     </label>
-                    <input
-                      type="text"
-                      value={
-                        invoicePaymentInfo.companyAddress ||
-                        '450 West 33rd Street, Suite 900, New York, NY 10001, USA'
-                      }
+                    <select
+                      value={invoicePaymentInfo.defaultPaymentOption || 'PayPal'}
                       onChange={(e) =>
                         onUpdateInvoicePaymentInfo({
                           ...invoicePaymentInfo,
-                          companyAddress: e.target.value,
+                          defaultPaymentOption: e.target
+                            .value as InvoicePaymentOption,
                         })
                       }
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
+                      className="w-full px-3 py-2 text-xs font-bold text-[#0088FF] bg-white border border-slate-300 rounded-lg"
+                    >
+                      <option value="PayPal">PayPal</option>
+                      <option value="Bank">Bank</option>
+                    </select>
                   </div>
+
                   <div>
                     <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Company Phone Number
+                      PayPal Mail ID (Shown when PayPal selected)
                     </label>
                     <input
                       type="text"
-                      value={invoicePaymentInfo.companyPhone || '+1 (212) 555-0199'}
+                      value={invoicePaymentInfo.paypalEmail || 'hello@clippasia.com'}
                       onChange={(e) =>
                         onUpdateInvoicePaymentInfo({
                           ...invoicePaymentInfo,
-                          companyPhone: e.target.value,
+                          paypalEmail: e.target.value,
                         })
                       }
-                      className="w-full px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg"
+                      className="w-full px-3 py-2 text-xs font-mono-tabular font-bold text-[#0088FF] border border-slate-300 rounded-lg"
                     />
                   </div>
+
                   <div>
                     <label className="block text-xs font-semibold text-[#001E5A] mb-1">
                       Tax / VAT Percentage (%)
@@ -3131,147 +3471,151 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                   </div>
                 </div>
 
-                {/* Row 2: Bank Details */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Bank Name
-                    </label>
-                    <input
-                      type="text"
-                      value={invoicePaymentInfo.bankName}
-                      onChange={(e) =>
-                        onUpdateInvoicePaymentInfo({
-                          ...invoicePaymentInfo,
-                          bankName: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Account Holder Name
-                    </label>
-                    <input
-                      type="text"
-                      value={invoicePaymentInfo.accountHolderName}
-                      onChange={(e) =>
-                        onUpdateInvoicePaymentInfo({
-                          ...invoicePaymentInfo,
-                          accountHolderName: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Account Number / IBAN
-                    </label>
-                    <input
-                      type="text"
-                      value={invoicePaymentInfo.accountNumberOrIban}
-                      onChange={(e) =>
-                        onUpdateInvoicePaymentInfo({
-                          ...invoicePaymentInfo,
-                          accountNumberOrIban: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Routing / SWIFT Code
-                    </label>
-                    <input
-                      type="text"
-                      value={invoicePaymentInfo.routingOrSwiftCode}
-                      onChange={(e) =>
-                        onUpdateInvoicePaymentInfo({
-                          ...invoicePaymentInfo,
-                          routingOrSwiftCode: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg"
-                    />
+                {/* Row 3: Bank Details Below (Shown when Bank is selected) */}
+                <div className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-3">
+                  <p className="text-xs font-bold text-[#001E5A] uppercase font-mono-tabular">
+                    2. Bank Details (Shown on Invoice when Payment Option = Bank)
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                        Bank Name
+                      </label>
+                      <input
+                        type="text"
+                        value={invoicePaymentInfo.bankName}
+                        onChange={(e) =>
+                          onUpdateInvoicePaymentInfo({
+                            ...invoicePaymentInfo,
+                            bankName: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                        Account Name
+                      </label>
+                      <input
+                        type="text"
+                        value={invoicePaymentInfo.accountHolderName}
+                        onChange={(e) =>
+                          onUpdateInvoicePaymentInfo({
+                            ...invoicePaymentInfo,
+                            accountHolderName: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                        Account No
+                      </label>
+                      <input
+                        type="text"
+                        value={invoicePaymentInfo.accountNumberOrIban}
+                        onChange={(e) =>
+                          onUpdateInvoicePaymentInfo({
+                            ...invoicePaymentInfo,
+                            accountNumberOrIban: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                        Branch
+                      </label>
+                      <input
+                        type="text"
+                        value={
+                          invoicePaymentInfo.bankBranch ||
+                          'Mirpur 11, Pallabi Branch, Dhaka, Bangladesh.'
+                        }
+                        onChange={(e) =>
+                          onUpdateInvoicePaymentInfo({
+                            ...invoicePaymentInfo,
+                            bankBranch: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                        Branch Code
+                      </label>
+                      <input
+                        type="text"
+                        value={invoicePaymentInfo.branchCode || '211'}
+                        onChange={(e) =>
+                          onUpdateInvoicePaymentInfo({
+                            ...invoicePaymentInfo,
+                            branchCode: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                        SWIFT Code
+                      </label>
+                      <input
+                        type="text"
+                        value={invoicePaymentInfo.swiftCode || 'DBBLBDDH'}
+                        onChange={(e) =>
+                          onUpdateInvoicePaymentInfo({
+                            ...invoicePaymentInfo,
+                            swiftCode: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                        Routing No
+                      </label>
+                      <input
+                        type="text"
+                        value={invoicePaymentInfo.routingNumber || '090263581'}
+                        onChange={(e) =>
+                          onUpdateInvoicePaymentInfo({
+                            ...invoicePaymentInfo,
+                            routingNumber: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                        Billing Support Email
+                      </label>
+                      <input
+                        type="text"
+                        value={invoicePaymentInfo.billingSupportEmail}
+                        onChange={(e) =>
+                          onUpdateInvoicePaymentInfo({
+                            ...invoicePaymentInfo,
+                            billingSupportEmail: e.target.value,
+                          })
+                        }
+                        className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                      />
+                    </div>
                   </div>
                 </div>
 
-                {/* Row 3: Online Gateways */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Row 4: Payment Instructions Note & Footer Terms */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      PayPal Payment Email / Link
-                    </label>
-                    <input
-                      type="text"
-                      value={invoicePaymentInfo.paypalEmail}
-                      onChange={(e) =>
-                        onUpdateInvoicePaymentInfo({
-                          ...invoicePaymentInfo,
-                          paypalEmail: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Payoneer / Wise Email
-                    </label>
-                    <input
-                      type="text"
-                      value={invoicePaymentInfo.payoneerOrWiseEmail}
-                      onChange={(e) =>
-                        onUpdateInvoicePaymentInfo({
-                          ...invoicePaymentInfo,
-                          payoneerOrWiseEmail: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Billing Support Email
-                    </label>
-                    <input
-                      type="text"
-                      value={invoicePaymentInfo.billingSupportEmail}
-                      onChange={(e) =>
-                        onUpdateInvoicePaymentInfo({
-                          ...invoicePaymentInfo,
-                          billingSupportEmail: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                </div>
-
-                {/* Row 4: Alternative & Instructions & Footer Terms */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Alternative / Mobile Wallet / Card Info
-                    </label>
-                    <input
-                      type="text"
-                      value={invoicePaymentInfo.mobileWalletOrCardInfo}
-                      onChange={(e) =>
-                        onUpdateInvoicePaymentInfo({
-                          ...invoicePaymentInfo,
-                          mobileWalletOrCardInfo: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Invoice Payment Instructions Note
+                      Invoice Payment Instructions Note (INV-FPS-2026-XXXX auto-replaces with Invoice No.)
                     </label>
                     <input
                       type="text"
@@ -3311,7 +3655,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                     type="button"
                     onClick={() =>
                       notifySaved(
-                        'Saved Invoice Header & Payment Information! All customer invoices in the Client Portal are now updated.'
+                        'Saved Invoice BILL FROM, Payment Terms, PayPal & Bank Details!'
                       )
                     }
                     className="px-5 py-2.5 text-xs font-bold text-white bg-[#001E5A] hover:bg-[#0088FF] rounded-lg transition-colors flex items-center gap-2"

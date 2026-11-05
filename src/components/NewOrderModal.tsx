@@ -20,6 +20,13 @@ interface NewOrderModalProps {
   isOpen: boolean;
   onClose: () => void;
   initialService?: ServiceCategory;
+  isAuthenticatedClient?: boolean;
+  clientProfileData?: {
+    name: string;
+    email: string;
+    phone: string;
+    companyName: string;
+  };
   onSubmitOrder: (payload: {
     projectTitle: string;
     serviceCategory: ServiceCategory;
@@ -30,6 +37,10 @@ interface NewOrderModalProps {
     instructions: string;
     totalPrice: number;
     uploadedBatchNames: string[];
+    clientName?: string;
+    clientEmail?: string;
+    clientPhone?: string;
+    companyName?: string;
   }) => Promise<void>;
 }
 
@@ -57,10 +68,18 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({
   isOpen,
   onClose,
   initialService = 'clipping_path',
+  isAuthenticatedClient = false,
+  clientProfileData,
   onSubmitOrder,
 }) => {
   const [division, setDivision] = useState<'photo_editing' | 'video_editing'>(
     'photo_editing'
+  );
+  const [guestName, setGuestName] = useState(clientProfileData?.name || '');
+  const [guestEmail, setGuestEmail] = useState(clientProfileData?.email || '');
+  const [guestPhone, setGuestPhone] = useState(clientProfileData?.phone || '');
+  const [guestCompany, setGuestCompany] = useState(
+    clientProfileData?.companyName || ''
   );
   const [projectTitle, setProjectTitle] = useState('');
   const [serviceSlug, setServiceSlug] = useState<string>(
@@ -76,6 +95,15 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({
   const [uploadLimitNotice, setUploadLimitNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  useEffect(() => {
+    if (isAuthenticatedClient && clientProfileData) {
+      setGuestName(clientProfileData.name || '');
+      setGuestEmail(clientProfileData.email || '');
+      setGuestPhone(clientProfileData.phone || '');
+      setGuestCompany(clientProfileData.companyName || '');
+    }
+  }, [isAuthenticatedClient, clientProfileData, isOpen]);
 
   useEffect(() => {
     if (isOpen && initialService) {
@@ -237,9 +265,44 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+
+    const effectiveName = (
+      isAuthenticatedClient && clientProfileData?.name
+        ? clientProfileData.name
+        : guestName
+    ).trim();
+    const effectiveEmail = (
+      isAuthenticatedClient && clientProfileData?.email
+        ? clientProfileData.email
+        : guestEmail
+    ).trim();
+    const effectivePhone = (
+      isAuthenticatedClient && clientProfileData?.phone
+        ? clientProfileData.phone
+        : guestPhone
+    ).trim();
+    const effectiveCompany = (
+      isAuthenticatedClient && clientProfileData?.companyName
+        ? clientProfileData.companyName
+        : guestCompany
+    ).trim();
+
+    if (!isAuthenticatedClient) {
+      if (effectiveName.length < 2 || !effectiveEmail.includes('@')) {
+        setErrorMsg('Please enter your Full Name and Work Email to place an order.');
+        return;
+      }
+      if (effectivePhone.length < 4) {
+        setErrorMsg('Please enter your Phone / WhatsApp Number to place an order.');
+        return;
+      }
+    }
+
     const finalTitle =
       projectTitle.trim() ||
-      `${selectedServiceObj.shortNavTitle} Production Batch`;
+      `${selectedServiceObj.shortNavTitle} Production Batch${
+        effectiveCompany ? ` (${effectiveCompany})` : ''
+      }`;
 
     setIsSubmitting(true);
     try {
@@ -255,6 +318,10 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({
           `Standard studio SOP for ${selectedServiceObj.shortNavTitle}.`,
         totalPrice,
         uploadedBatchNames: uploadQueue.map((item) => item.name).slice(0, 10),
+        clientName: effectiveName || undefined,
+        clientEmail: effectiveEmail || undefined,
+        clientPhone: effectivePhone || undefined,
+        companyName: effectiveCompany || undefined,
       });
       onClose();
     } catch (err) {
@@ -327,6 +394,85 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({
                 02. Video Editing Order
               </button>
             </div>
+
+            {isAuthenticatedClient && clientProfileData?.email ? (
+              <div className="p-3.5 rounded-xl bg-[#EAF3FC] border border-[#B8D0EB] flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-[#0088FF] shrink-0" />
+                  <div>
+                    <p className="text-[11px] font-bold text-[#001E5A]">
+                      Ordering with Your Logged-In Profile (Auto-Filled)
+                    </p>
+                    <p className="text-[11px] text-slate-600 font-mono-tabular">
+                      {clientProfileData.name} · {clientProfileData.email}
+                      {clientProfileData.phone
+                        ? ` · ${clientProfileData.phone}`
+                        : ''}
+                      {clientProfileData.companyName
+                        ? ` · ${clientProfileData.companyName}`
+                        : ''}
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-white border border-[#DCE6F2] text-[10px] font-bold text-[#0088FF]">
+                  Profile Linked
+                </span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl bg-[#F5F9FD] border border-[#DCE6F2]">
+                <div>
+                  <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                    Your Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={guestName}
+                    onChange={(e) => setGuestName(e.target.value)}
+                    placeholder="Sarah Jenkins"
+                    className="w-full px-3 py-2 text-xs bg-white border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                    Work Email *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={guestEmail}
+                    onChange={(e) => setGuestEmail(e.target.value)}
+                    placeholder="sarah@retailbrand.com"
+                    className="w-full px-3 py-2 text-xs bg-white border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                    Phone / WhatsApp Number *
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    value={guestPhone}
+                    onChange={(e) => setGuestPhone(e.target.value)}
+                    placeholder="+1 (212) 555-0194"
+                    className="w-full px-3 py-2 text-xs bg-white border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                    Company / Agency
+                  </label>
+                  <input
+                    type="text"
+                    value={guestCompany}
+                    onChange={(e) => setGuestCompany(e.target.value)}
+                    placeholder="Veloce Commerce"
+                    className="w-full px-3 py-2 text-xs bg-white border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
+                  />
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-semibold text-[#001E5A] mb-1.5">

@@ -23,6 +23,12 @@ interface FreeTrialPageProps {
   onClose?: () => void;
   services: ServiceDefinition[];
   isAuthenticatedClient?: boolean;
+  clientProfileData?: {
+    name: string;
+    email: string;
+    phone: string;
+    companyName: string;
+  };
   onSubmitTrialOrder: (payload: {
     projectTitle: string;
     serviceCategory: ServiceCategory;
@@ -33,6 +39,10 @@ interface FreeTrialPageProps {
     instructions: string;
     totalPrice: number;
     uploadedBatchNames: string[];
+    clientName?: string;
+    clientEmail?: string;
+    clientPhone?: string;
+    companyName?: string;
   }) => Promise<void>;
   onSubmitPublicQuery?: (payload: {
     clientName: string;
@@ -61,6 +71,7 @@ export const FreeTrialPage: React.FC<FreeTrialPageProps> = ({
   onClose,
   services,
   isAuthenticatedClient = false,
+  clientProfileData,
   onSubmitTrialOrder,
   onSubmitPublicQuery,
   onExploreService,
@@ -72,15 +83,26 @@ export const FreeTrialPage: React.FC<FreeTrialPageProps> = ({
   const [selectedSlug, setSelectedSlug] = useState<string>(
     'clipping-path-service'
   );
-  const [fullName, setFullName] = useState('');
-  const [workEmail, setWorkEmail] = useState('');
-  const [phoneNumber, setPhoneNumber] = useState('');
-  const [companyName, setCompanyName] = useState('');
+  const [fullName, setFullName] = useState(clientProfileData?.name || '');
+  const [workEmail, setWorkEmail] = useState(clientProfileData?.email || '');
+  const [phoneNumber, setPhoneNumber] = useState(clientProfileData?.phone || '');
+  const [companyName, setCompanyName] = useState(
+    clientProfileData?.companyName || ''
+  );
   const [trialCount, setTrialCount] = useState<number>(5);
   const [outputFormat] = useState<OutputFormat>('PSD_LAYERED');
   const [backgroundSpec] = useState<BackgroundSpec>('PURE_WHITE_FFFFFF');
   const [turnaroundHours] = useState<number>(12);
   const [instructions, setInstructions] = useState('');
+
+  useEffect(() => {
+    if (isAuthenticatedClient && clientProfileData) {
+      setFullName(clientProfileData.name || '');
+      setWorkEmail(clientProfileData.email || '');
+      setPhoneNumber(clientProfileData.phone || '');
+      setCompanyName(clientProfileData.companyName || '');
+    }
+  }, [isAuthenticatedClient, clientProfileData]);
 
   const [trialFiles, setTrialFiles] = useState<TrialUploadFile[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -199,8 +221,34 @@ export const FreeTrialPage: React.FC<FreeTrialPageProps> = ({
     e.preventDefault();
     setErrorMsg(null);
 
-    if (fullName.trim().length < 2 || !workEmail.includes('@')) {
+    const effectiveName = (
+      isAuthenticatedClient && clientProfileData?.name
+        ? clientProfileData.name
+        : fullName
+    ).trim();
+    const effectiveEmail = (
+      isAuthenticatedClient && clientProfileData?.email
+        ? clientProfileData.email
+        : workEmail
+    ).trim();
+    const effectivePhone = (
+      isAuthenticatedClient && clientProfileData?.phone
+        ? clientProfileData.phone
+        : phoneNumber
+    ).trim();
+    const effectiveCompany = (
+      isAuthenticatedClient && clientProfileData?.companyName
+        ? clientProfileData.companyName
+        : companyName
+    ).trim();
+
+    if (effectiveName.length < 2 || !effectiveEmail.includes('@')) {
       setErrorMsg('Please enter your full name and a valid work email address.');
+      return;
+    }
+
+    if (!isAuthenticatedClient && effectivePhone.length < 4) {
+      setErrorMsg('Please enter your Phone / WhatsApp number.');
       return;
     }
 
@@ -211,10 +259,10 @@ export const FreeTrialPage: React.FC<FreeTrialPageProps> = ({
       let qNum = `FPS-QRY-${Math.floor(1000 + Math.random() * 9000)}`;
       if (onSubmitPublicQuery) {
         const res = await onSubmitPublicQuery({
-          clientName: fullName.trim(),
-          clientEmail: workEmail.trim(),
-          clientPhone: phoneNumber.trim(),
-          companyName: companyName.trim(),
+          clientName: effectiveName,
+          clientEmail: effectiveEmail,
+          clientPhone: effectivePhone,
+          companyName: effectiveCompany,
           serviceTitle: activeServiceObj.shortNavTitle,
           serviceSlug: activeServiceObj.slug,
           instructions:
@@ -225,33 +273,38 @@ export const FreeTrialPage: React.FC<FreeTrialPageProps> = ({
         qNum = res.queryNumber;
       }
 
+      await onSubmitTrialOrder({
+        projectTitle: `FREE ${
+          division === 'video_editing' ? 'VIDEO' : '5-IMAGE'
+        } TRIAL (${qNum}) — ${activeServiceObj.shortNavTitle} · ${
+          effectiveCompany || effectiveName
+        }`,
+        serviceCategory: activeServiceObj.id,
+        imageCount: Math.min(5, Math.max(1, trialCount)),
+        turnaroundHours,
+        outputFormat,
+        backgroundSpec,
+        instructions: `[FREE TRIAL · ${effectiveName} <${effectiveEmail}>${
+          effectivePhone ? ` · Tel: ${effectivePhone}` : ''
+        }${effectiveCompany ? ` · Co: ${effectiveCompany}` : ''}] ${
+          instructions.trim() ||
+          `Complimentary trial for ${activeServiceObj.shortNavTitle}.`
+        }`,
+        totalPrice: 0,
+        uploadedBatchNames: sampleFileNames,
+        clientName: effectiveName,
+        clientEmail: effectiveEmail,
+        clientPhone: effectivePhone,
+        companyName: effectiveCompany,
+      });
+
       if (isAuthenticatedClient) {
-        await onSubmitTrialOrder({
-          projectTitle: `FREE ${
-            division === 'video_editing' ? 'VIDEO' : '5-IMAGE'
-          } TRIAL (${qNum}) — ${activeServiceObj.shortNavTitle} · ${
-            companyName.trim() || fullName.trim()
-          }`,
-          serviceCategory: activeServiceObj.id,
-          imageCount: Math.min(5, Math.max(1, trialCount)),
-          turnaroundHours,
-          outputFormat,
-          backgroundSpec,
-          instructions: `[FREE TRIAL · ${fullName.trim()} <${workEmail.trim()}>${
-            phoneNumber.trim() ? ` · Tel: ${phoneNumber.trim()}` : ''
-          }] ${
-            instructions.trim() ||
-            `Complimentary trial for ${activeServiceObj.shortNavTitle}.`
-          }`,
-          totalPrice: 0,
-          uploadedBatchNames: sampleFileNames,
-        });
         handleDismiss();
       } else {
         setSubmittedNotice({
           queryNumber: qNum,
-          clientName: fullName.trim(),
-          clientEmail: workEmail.trim(),
+          clientName: effectiveName,
+          clientEmail: effectiveEmail,
           serviceTitle: activeServiceObj.shortNavTitle,
         });
       }
@@ -325,58 +378,84 @@ export const FreeTrialPage: React.FC<FreeTrialPageProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                  Your Full Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Alex Rivera"
-                  className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
-                />
+            {isAuthenticatedClient && clientProfileData?.email ? (
+              <div className="p-3.5 rounded-xl bg-[#EAF3FC] border border-[#B8D0EB] flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-[#0088FF] shrink-0" />
+                  <div>
+                    <p className="text-[11px] font-bold text-[#001E5A]">
+                      Ordering with Your Logged-In Profile (Auto-Filled)
+                    </p>
+                    <p className="text-[11px] text-slate-600 font-mono-tabular">
+                      {clientProfileData.name} · {clientProfileData.email}
+                      {clientProfileData.phone
+                        ? ` · ${clientProfileData.phone}`
+                        : ''}
+                      {clientProfileData.companyName
+                        ? ` · ${clientProfileData.companyName}`
+                        : ''}
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-white border border-[#DCE6F2] text-[10px] font-bold text-[#0088FF]">
+                  Profile Linked
+                </span>
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                  Work Email *
-                </label>
-                <input
-                  type="email"
-                  required
-                  value={workEmail}
-                  onChange={(e) => setWorkEmail(e.target.value)}
-                  placeholder="alex@brandstudio.com"
-                  className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
-                />
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                    Your Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Alex Rivera"
+                    className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                    Work Email *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={workEmail}
+                    onChange={(e) => setWorkEmail(e.target.value)}
+                    placeholder="alex@brandstudio.com"
+                    className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                    Phone / WhatsApp Number *
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    placeholder="+1 (212) 555-0194"
+                    className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                    Studio / Brand Name
+                  </label>
+                  <input
+                    type="text"
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    placeholder="Atelier Nord"
+                    className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                  Phone / WhatsApp Number
-                </label>
-                <input
-                  type="tel"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  placeholder="+1 (212) 555-0194"
-                  className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                  Studio / Brand Name
-                </label>
-                <input
-                  type="text"
-                  value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
-                  placeholder="Atelier Nord"
-                  className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
-                />
-              </div>
-            </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="sm:col-span-2">

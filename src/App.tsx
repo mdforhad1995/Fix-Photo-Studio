@@ -60,6 +60,8 @@ import {
   ClientQueryItem,
   InvoicePaymentInfo,
   InvoicePaymentStatus,
+  InvoicePaymentTerms,
+  InvoicePaymentOption,
 } from './types';
 import {
   INITIAL_CLIENT_QUERIES,
@@ -119,15 +121,21 @@ type ActivePageRoute =
   | 'portal'
   | 'admin_login';
 
+function getClientIdFromEmail(email?: string | null): string {
+  const clean = (email || '').trim().toLowerCase();
+  if (!clean) return '';
+  return `client_${clean.replace(/[^a-z0-9]/g, '_')}`;
+}
+
 const INITIAL_SANDBOX_PROFILE: UserProfileDoc = {
-  uid: 'sandbox_studio_client',
-  displayName: 'Julian Vance',
-  companyName: 'Vance & Co. E-Commerce Studio',
+  uid: '',
+  displayName: 'Studio Client',
+  companyName: '',
   role: 'client',
   planTier: 'studio_pro',
   billingCycle: 'monthly',
   monthlyQuota: 1250,
-  usedCredits: 362,
+  usedCredits: 0,
   mfaEnabled: true,
   mfaMethod: 'totp_authenticator',
   mfaSecretHint: 'TOTP-FPS9',
@@ -136,173 +144,43 @@ const INITIAL_SANDBOX_PROFILE: UserProfileDoc = {
 };
 
 const INITIAL_SANDBOX_PRIVATE: UserPrivateInfoDoc = {
-  uid: 'sandbox_studio_client',
-  email: 'julian@vancestudio.com',
-  phone: '+1 (212) 555-0194',
-  billingAddress: '450 West 33rd Street, Suite 900, New York, NY 10001',
+  uid: '',
+  email: '',
+  phone: '',
+  billingAddress: '',
   mfaRecoveryCodeHash: 'SHA256_FPS-REC-9941-8820-SAFE',
   updatedAt: new Date(),
 };
 
-const INITIAL_SANDBOX_ORDERS: OrderDoc[] = [
-  {
-    id: 'ord_fps_8841',
-    orderNumber: 'FPS-2026-8841',
-    clientId: 'sandbox_studio_client',
-    clientName: 'Julian Vance',
-    projectTitle: 'Geneva Horology Chronograph 16-Bit Multi-Path Batch',
-    serviceCategory: 'clipping_path',
-    imageCount: 140,
-    turnaroundHours: 12,
-    outputFormat: 'PSD_LAYERED',
-    backgroundSpec: 'PURE_WHITE_FFFFFF',
-    instructions:
-      'Isolate outer steel case, crown, alligator strap, and sapphire crystal onto separate vector paths. Maintain 0.25px feather and natural ground contact shadow at 12% opacity.',
-    totalPrice: 95.2,
-    status: 'retouching',
-    progressPercent: 76,
-    uploadedBatchNames: [
-      'Calibre89_Chrono_Front_RAW.cr3',
-      'Calibre89_Chrono_ThreeQuarter_RAW.cr3',
-      'Calibre89_Chrono_ClaspMacro_RAW.cr3',
-    ],
-    deliveryReady: false,
-    createdAt: new Date(Date.now() - 3600 * 1000 * 5),
-    updatedAt: new Date(Date.now() - 3600 * 1000 * 1),
-  },
-  {
-    id: 'ord_fps_8839',
-    orderNumber: 'FPS-2026-8839',
-    clientId: 'sandbox_studio_client',
-    clientName: 'Julian Vance',
-    projectTitle: 'Atelier Nord Autumn Lookbook 3D Ghost Mannequin',
-    serviceCategory: 'ghost_mannequin',
-    imageCount: 222,
-    turnaroundHours: 24,
-    outputFormat: 'TIFF_16BIT',
-    backgroundSpec: 'TRANSPARENT',
-    instructions:
-      'Composite inner collar brand woven label shots into neck joint. Align hemline symmetry and remove vertical steam creases on wool lapels.',
-    totalPrice: 222.0,
-    status: 'completed',
-    progressPercent: 100,
-    uploadedBatchNames: [
-      'Nord_DoubleBlazer_Front_01.nef',
-      'Nord_DoubleBlazer_InnerCollar_01.nef',
-      'Nord_TrenchCoat_Front_04.nef',
-    ],
-    deliveryReady: true,
-    createdAt: new Date(Date.now() - 3600 * 1000 * 28),
-    updatedAt: new Date(Date.now() - 3600 * 1000 * 6),
-  },
-];
+const INITIAL_SANDBOX_ORDERS: OrderDoc[] = [];
 
-const INITIAL_SANDBOX_MESSAGES: Record<string, OrderMessageDoc[]> = {
-  ord_fps_8841: [
-    {
-      id: 'msg_1',
-      orderId: 'ord_fps_8841',
-      clientId: 'sandbox_studio_client',
-      senderId: 'sandbox_studio_client',
-      senderName: 'Julian Vance',
-      senderRole: 'client',
-      body: 'Please keep the blue anti-reflective coating tint subtle on the sapphire crystal sub-dials.',
-      attachmentName: 'Calibre89_Subdial_Ref.jpg',
-      createdAt: new Date(Date.now() - 3600 * 1000 * 4),
-    },
-    {
-      id: 'msg_2',
-      orderId: 'ord_fps_8841',
-      clientId: 'sandbox_studio_client',
-      senderId: 'specialist_elena',
-      senderName: 'Elena Rostova',
-      senderRole: 'specialist',
-      body: 'Confirmed, Julian. Our horology pod has isolated the sub-dial hands on Path #4 and balanced the crystal reflection to ΔE 0.3 neutral daylight. 106 of 140 frames are now entering 400% QA.',
-      attachmentName: 'FPS_8841_Proof_Frame12.psd',
-      createdAt: new Date(Date.now() - 3600 * 1000 * 2),
-    },
-  ],
-  ord_fps_8839: [
-    {
-      id: 'msg_3',
-      orderId: 'ord_fps_8839',
-      clientId: 'sandbox_studio_client',
-      senderId: 'specialist_elena',
-      senderName: 'Elena Rostova',
-      senderRole: 'specialist',
-      body: 'All 222 ghost mannequin composites passed final dual-stage QA. Your 16-bit TIFF master archive is ready for download.',
-      attachmentName: 'FPS-2026-8839_MasterArchive.zip',
-      createdAt: new Date(Date.now() - 3600 * 1000 * 6),
-    },
-  ],
-};
+const INITIAL_SANDBOX_MESSAGES: Record<string, OrderMessageDoc[]> = {};
 
-const INITIAL_SANDBOX_NOTIFICATIONS: NotificationAlertDoc[] = [
-  {
-    id: 'notif_1',
-    userId: 'sandbox_studio_client',
-    type: 'order_status',
-    title: 'Order FPS-2026-8841 Advanced to Senior Retouching (76%)',
-    message:
-      '140 chronograph frames completed hand-drawn Bezier clipping and are now undergoing specular metal polishing.',
-    amountFormatted: '',
-    invoiceRef: '',
-    read: false,
-    createdAt: new Date(Date.now() - 3600 * 1000 * 1),
-  },
-  {
-    id: 'notif_2',
-    userId: 'sandbox_studio_client',
-    type: 'payment_receipt',
-    title: 'Payment Confirmation Receipt — Order FPS-2026-8841',
-    message:
-      'Settled 140 frames (Layered PSD · 12h Express SLA) via Studio Pro Retainer & card ending in 4419.',
-    amountFormatted: '$95.20 USD',
-    invoiceRef: 'INV-FPS-2026-8841',
-    read: false,
-    createdAt: new Date(Date.now() - 3600 * 1000 * 5),
-  },
-  {
-    id: 'notif_3',
-    userId: 'sandbox_studio_client',
-    type: 'delivery_ready',
-    title: 'Master Archive Ready — Order FPS-2026-8839 (222 Frames)',
-    message:
-      'Atelier Nord Autumn Lookbook 3D Ghost Mannequin batch passed 400% QA review and is available for encrypted download.',
-    amountFormatted: '$222.00 USD',
-    invoiceRef: 'INV-FPS-2026-8839',
-    read: true,
-    createdAt: new Date(Date.now() - 3600 * 1000 * 6),
-  },
-  {
-    id: 'notif_4',
-    userId: 'sandbox_studio_client',
-    type: 'security_mfa',
-    title: 'TOTP Multi-Factor Authentication Vault Verified',
-    message:
-      'Two-factor authentication and isolated PII billing vault (/private/info) are active on your studio account.',
-    amountFormatted: '',
-    invoiceRef: '',
-    read: true,
-    createdAt: new Date(Date.now() - 3600 * 1000 * 24),
-  },
-];
+const INITIAL_SANDBOX_NOTIFICATIONS: NotificationAlertDoc[] = [];
 
 const DEFAULT_INVOICE_PAYMENT_INFO: InvoicePaymentInfo = {
-  companyName: 'FixPhoto Studio Inc.',
+  companyName: 'Fix Photo Studio.',
+  contactPerson: 'Eng. Md Forhad Hossen.',
   companyTagline: 'Get pixel-perfect photo & video editing services',
-  companyAddress: '450 West 33rd Street, Suite 900, New York, NY 10001, USA',
-  companyPhone: '+1 (212) 555-0199',
+  companyAddress: 'House 5, Road 5, Block A, Mirpur 1, Dhaka, 1216.',
+  companyCountry: 'Bangladesh.',
+  companyPhone: '+8801911862115',
   taxRatePercent: 0,
+  defaultPaymentTerms: 'Project',
+  defaultPaymentOption: 'PayPal',
   invoiceNotesAndTerms:
-    'Official Commercial Invoice issued by FixPhoto Studio. All deliverables include dual-stage 400% QA verification and lifetime archive warranty.',
-  bankName: 'JPMorgan Chase Bank, N.A. (Commercial Studio Banking)',
-  accountHolderName: 'FixPhoto Studio Retouching Agency LLC',
-  accountNumberOrIban: '8840-2910-4492 / IBAN US88CHASUS3388402910',
-  routingOrSwiftCode: 'ABA Routing: 021000021 · SWIFT: CHASUS33',
-  paypalEmail: 'billing@fixphotostudio.com',
-  payoneerOrWiseEmail: 'wise@fixphotostudio.com · Payoneer ID: FPS-882410',
-  mobileWalletOrCardInfo: 'Stripe Invoice Link / Wire Transfer / Wise Instant Settlement',
+    'Official Commercial Invoice issued by Fix Photo Studio. All deliverables include dual-stage 400% QA verification and lifetime archive warranty.',
+  bankName: 'Dutch Bangla Bank PLC',
+  accountHolderName: 'Md Forhad Hossen',
+  accountNumberOrIban: '211.1510.213110',
+  bankBranch: 'Mirpur 11, Pallabi Branch, Dhaka, Bangladesh.',
+  branchCode: '211',
+  swiftCode: 'DBBLBDDH',
+  routingNumber: '090263581',
+  routingOrSwiftCode: 'SWIFT: DBBLBDDH · Routing No: 090263581',
+  paypalEmail: 'hello@clippasia.com',
+  payoneerOrWiseEmail: 'hello@clippasia.com',
+  mobileWalletOrCardInfo: 'PayPal / Bank Transfer',
   paymentInstructions:
     'Please include your Invoice Reference ID (INV-FPS-2026-XXXX) in the payment memo. Once payment is sent, our billing desk will verify and update your invoice status from PENDING to PAID in the Client Portal.',
   billingSupportEmail: 'asiaclipp@gmail.com',
@@ -407,7 +285,7 @@ export default function App() {
   );
   const [invoicePaymentInfo, setInvoicePaymentInfo] =
     useState<InvoicePaymentInfo>(() =>
-      loadStoredJson('fps_invoice_payment_info_v1', DEFAULT_INVOICE_PAYMENT_INFO)
+      loadStoredJson('fps_invoice_payment_info_v2', DEFAULT_INVOICE_PAYMENT_INFO)
     );
   const [invoiceStatusMap, setInvoiceStatusMap] = useState<
     Record<string, InvoicePaymentStatus>
@@ -554,7 +432,7 @@ export default function App() {
   useEffect(() => {
     try {
       window.localStorage.setItem(
-        'fps_invoice_payment_info_v1',
+        'fps_invoice_payment_info_v2',
         JSON.stringify(invoicePaymentInfo)
       );
     } catch {
@@ -625,7 +503,7 @@ export default function App() {
       window.localStorage.removeItem('fps_customer_reviews_v2');
       window.localStorage.removeItem('fps_blog_posts_v1');
       window.localStorage.removeItem('fps_subscription_plans_v2');
-      window.localStorage.removeItem('fps_invoice_payment_info_v1');
+      window.localStorage.removeItem('fps_invoice_payment_info_v2');
     } catch {
       // Ignore storage errors
     }
@@ -716,23 +594,180 @@ export default function App() {
     return null;
   });
 
+  const [portalClientEmail, setPortalClientEmail] = useState<string | null>(
+    () => {
+      try {
+        const saved = window.localStorage.getItem(
+          'fps_client_portal_session_v1'
+        );
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed?.signedIn && parsed?.email)
+            return String(parsed.email).trim().toLowerCase();
+        }
+      } catch {
+        // ignore
+      }
+      return null;
+    }
+  );
+
+  const [portalClientPhone, setPortalClientPhone] = useState<string>(() => {
+    try {
+      const saved = window.localStorage.getItem('fps_client_portal_session_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.signedIn && parsed?.phone) return String(parsed.phone);
+      }
+    } catch {
+      // ignore
+    }
+    return '';
+  });
+
+  const [portalClientCompany, setPortalClientCompany] = useState<string>(() => {
+    try {
+      const saved = window.localStorage.getItem('fps_client_portal_session_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.signedIn && parsed?.companyName) {
+          const c = String(parsed.companyName);
+          return c === 'Registered Creative Studio' || c === 'Creative Retail Brand'
+            ? ''
+            : c;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return '';
+  });
+
+  const [portalClientAddress, setPortalClientAddress] = useState<string>(() => {
+    try {
+      const saved = window.localStorage.getItem('fps_client_portal_session_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.signedIn && parsed?.billingAddress)
+          return String(parsed.billingAddress);
+      }
+    } catch {
+      // ignore
+    }
+    return '';
+  });
+
+  const [portalClientWebsite, setPortalClientWebsite] = useState<string>(() => {
+    try {
+      const saved = window.localStorage.getItem('fps_client_portal_session_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.signedIn && parsed?.website) return String(parsed.website);
+      }
+    } catch {
+      // ignore
+    }
+    return '';
+  });
+
+  const activeClientId = firebaseUser
+    ? firebaseUser.uid
+    : portalClientEmail
+    ? getClientIdFromEmail(portalClientEmail)
+    : '';
+
+  const activeClientDisplayName =
+    firebaseUser?.displayName || portalClientName || 'Studio Client';
+
+  const isClientAuthenticated = Boolean(firebaseUser || portalClientEmail);
+
   const [userProfile, setUserProfile] = useState<UserProfileDoc>(
     INITIAL_SANDBOX_PROFILE
   );
   const [privateInfo, setPrivateInfo] = useState<UserPrivateInfoDoc | null>(
     INITIAL_SANDBOX_PRIVATE
   );
-  const [orders, setOrders] = useState<OrderDoc[]>(INITIAL_SANDBOX_ORDERS);
-  const [selectedOrderId, setSelectedOrderId] = useState<string>(
-    INITIAL_SANDBOX_ORDERS[0].id
+
+  const activeClientProfileData = {
+    name: activeClientDisplayName,
+    email: firebaseUser?.email || portalClientEmail || '',
+    phone: portalClientPhone || privateInfo?.phone || '',
+    companyName:
+      portalClientCompany ||
+      (userProfile.companyName === 'Registered Creative Studio'
+        ? ''
+        : userProfile.companyName || ''),
+    address: portalClientAddress || privateInfo?.billingAddress || '',
+    website: portalClientWebsite || '',
+  };
+
+  useEffect(() => {
+    if (isClientAuthenticated) {
+      if (activeClientProfileData.name) setTrialName(activeClientProfileData.name);
+      if (activeClientProfileData.email) setTrialEmail(activeClientProfileData.email);
+      if (activeClientProfileData.phone) setTrialPhone(activeClientProfileData.phone);
+    }
+  }, [
+    isClientAuthenticated,
+    activeClientProfileData.name,
+    activeClientProfileData.email,
+    activeClientProfileData.phone,
+  ]);
+  const [orders, setOrders] = useState<OrderDoc[]>(() =>
+    loadStoredJson<OrderDoc[]>('fps_all_orders_v3', []).filter(
+      (o) => o && o.clientId && o.clientId !== 'sandbox_studio_client'
+    )
   );
+  const [selectedOrderId, setSelectedOrderId] = useState<string>('');
   const [sandboxMessagesMap, setSandboxMessagesMap] = useState<
     Record<string, OrderMessageDoc[]>
-  >(INITIAL_SANDBOX_MESSAGES);
+  >(() =>
+    loadStoredJson<Record<string, OrderMessageDoc[]>>(
+      'fps_all_messages_v3',
+      {}
+    )
+  );
   const [liveMessages, setLiveMessages] = useState<OrderMessageDoc[]>([]);
   const [notifications, setNotifications] = useState<NotificationAlertDoc[]>(
-    INITIAL_SANDBOX_NOTIFICATIONS
+    () =>
+      loadStoredJson<NotificationAlertDoc[]>('fps_all_notifications_v3', []).filter(
+        (n) => n && n.userId && n.userId !== 'sandbox_studio_client'
+      )
   );
+
+  // Persist user-submitted orders, messages, and notifications so each client sees their own history and Admin sees all
+  useEffect(() => {
+    if (firebaseUser) return;
+    try {
+      window.localStorage.setItem('fps_all_orders_v3', JSON.stringify(orders));
+    } catch {
+      // ignore
+    }
+  }, [orders, firebaseUser]);
+
+  useEffect(() => {
+    if (firebaseUser) return;
+    try {
+      window.localStorage.setItem(
+        'fps_all_messages_v3',
+        JSON.stringify(sandboxMessagesMap)
+      );
+    } catch {
+      // ignore
+    }
+  }, [sandboxMessagesMap, firebaseUser]);
+
+  useEffect(() => {
+    if (firebaseUser) return;
+    try {
+      window.localStorage.setItem(
+        'fps_all_notifications_v3',
+        JSON.stringify(notifications)
+      );
+    } catch {
+      // ignore
+    }
+  }, [notifications, firebaseUser]);
 
   // 1. Listen to Auth State
   useEffect(() => {
@@ -743,9 +778,6 @@ export default function App() {
       if (!user) {
         setUserProfile(INITIAL_SANDBOX_PROFILE);
         setPrivateInfo(INITIAL_SANDBOX_PRIVATE);
-        setOrders(INITIAL_SANDBOX_ORDERS);
-        setSelectedOrderId(INITIAL_SANDBOX_ORDERS[0].id);
-        setNotifications(INITIAL_SANDBOX_NOTIFICATIONS);
       }
     });
     return () => unsub();
@@ -765,7 +797,8 @@ export default function App() {
         if (snap.exists()) {
           setUserProfile(snap.data() as UserProfileDoc);
         } else {
-          const isBootstrappedAdmin = firebaseUser.email === 'asiaclipp@gmail.com';
+          const isBootstrappedAdmin =
+            firebaseUser.email === 'asiaclipp@gmail.com';
           const newProfile = {
             uid,
             displayName: sanitizeString(
@@ -773,12 +806,12 @@ export default function App() {
               SCHEMA_LIMITS.DISPLAY_NAME_MAX,
               'Studio Client'
             ),
-            companyName: 'Registered Creative Studio',
+            companyName: '',
             role: isBootstrappedAdmin ? 'admin' : 'client',
             planTier: 'studio_pro',
             billingCycle: 'monthly',
             monthlyQuota: 1250,
-            usedCredits: 140,
+            usedCredits: 0,
             mfaEnabled: true,
             mfaMethod: 'totp_authenticator',
             mfaSecretHint: 'TOTP-FPS9',
@@ -794,75 +827,10 @@ export default function App() {
                 SCHEMA_LIMITS.EMAIL_MAX,
                 'client@fixphotostudio.com'
               ),
-              phone: '+1 (212) 555-0194',
-              billingAddress: '450 West 33rd Street, Suite 900, New York, NY 10001',
+              phone: '',
+              billingAddress: '',
               mfaRecoveryCodeHash: 'SHA256_FPS-REC-9941-8820-SAFE',
               updatedAt: serverTimestamp(),
-            });
-
-            const initialOrderId = sanitizeId(`ord_${uid.slice(0, 8)}_8841`);
-            const orderRef = doc(db, 'orders', initialOrderId);
-            await setDoc(orderRef, {
-              orderNumber: 'FPS-2026-8841',
-              clientId: uid,
-              clientName: sanitizeString(
-                firebaseUser.displayName || 'Studio Client',
-                SCHEMA_LIMITS.DISPLAY_NAME_MAX,
-                'Studio Client'
-              ),
-              projectTitle: 'Horology Chronograph 16-Bit Multi-Path Batch',
-              serviceCategory: 'clipping_path',
-              imageCount: 140,
-              turnaroundHours: 12,
-              outputFormat: 'PSD_LAYERED',
-              backgroundSpec: 'PURE_WHITE_FFFFFF',
-              instructions:
-                'Isolate outer steel case, crown, strap, and sapphire crystal onto separate vector paths with 0.25px feather.',
-              totalPrice: 95.2,
-              status: 'retouching',
-              progressPercent: 76,
-              uploadedBatchNames: [
-                'Calibre89_Chrono_Front_RAW.cr3',
-                'Calibre89_Chrono_ThreeQuarter_RAW.cr3',
-              ],
-              deliveryReady: false,
-              createdAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-            });
-
-            const welcomeMsgRef = doc(
-              db,
-              'orders',
-              initialOrderId,
-              'messages',
-              'msg_welcome_1'
-            );
-            await setDoc(welcomeMsgRef, {
-              orderId: initialOrderId,
-              clientId: uid,
-              senderId: uid,
-              senderName: 'Elena Rostova (Lead Specialist)',
-              senderRole: 'specialist',
-              body: 'Welcome to FixPhoto Studio! Your 140 chronograph frames are assigned to Pod #4 and are 76% complete.',
-              attachmentName: 'FPS_8841_StyleGuide_Verified.pdf',
-              createdAt: serverTimestamp(),
-            });
-
-            const notifRef = doc(
-              db,
-              'notifications',
-              sanitizeId(`notif_${uid.slice(0, 8)}_1`)
-            );
-            await setDoc(notifRef, {
-              userId: uid,
-              type: 'payment_receipt',
-              title: 'Payment Confirmation Receipt — Order FPS-2026-8841',
-              message:
-                'Settled 140 frames (Layered PSD · 12h Express SLA) via Studio Pro Retainer.',
-              amountFormatted: '$95.20 USD',
-              invoiceRef: 'INV-FPS-2026-8841',
-              read: false,
-              createdAt: serverTimestamp(),
             });
           } catch (err) {
             handleFirestoreError(err, OperationType.WRITE, `users/${uid}`);
@@ -988,10 +956,16 @@ export default function App() {
   const handleGoogleSignIn = async () => {
     setIsSigningIn(true);
     try {
-      await signInWithPopup(auth, googleProvider);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        window.setTimeout(
+          () => reject(new Error('Google popup timeout or blocked on live domain')),
+          4000
+        )
+      );
+      await Promise.race([signInWithPopup(auth, googleProvider), timeoutPromise]);
       setActivePage('portal');
     } catch (err) {
-      console.error('Google Sign-In failed:', err);
+      console.error('Google Sign-In fallback:', err);
     } finally {
       setIsSigningIn(false);
     }
@@ -1017,6 +991,12 @@ export default function App() {
       instructions: string;
       totalPrice: number;
       uploadedBatchNames: string[];
+      clientName?: string;
+      clientEmail?: string;
+      clientPhone?: string;
+      companyName?: string;
+      clientAddress?: string;
+      clientWebsite?: string;
     },
     options?: { redirectToPortal?: boolean }
   ): Promise<string> => {
@@ -1024,6 +1004,29 @@ export default function App() {
     const orderNumber = `FPS-2026-${randomSuffix}`;
     const invoiceRef = `INV-FPS-2026-${randomSuffix}`;
     const orderId = sanitizeId(`ord_${Date.now()}_${randomSuffix}`);
+
+    const resolvedClientEmail =
+      payload.clientEmail?.trim().toLowerCase() ||
+      activeClientProfileData.email ||
+      '';
+    const resolvedOwnerId = firebaseUser
+      ? firebaseUser.uid
+      : resolvedClientEmail
+      ? getClientIdFromEmail(resolvedClientEmail)
+      : activeClientId || 'guest_client';
+
+    const resolvedOwnerName =
+      payload.clientName?.trim() || activeClientDisplayName;
+    const resolvedClientPhone =
+      payload.clientPhone?.trim() || activeClientProfileData.phone || '';
+    const resolvedCompanyName =
+      payload.companyName !== undefined
+        ? payload.companyName.trim()
+        : activeClientProfileData.companyName || '';
+    const resolvedClientAddress =
+      payload.clientAddress?.trim() || activeClientProfileData.address || '';
+    const resolvedClientWebsite =
+      payload.clientWebsite?.trim() || activeClientProfileData.website || '';
 
     // New customer orders start as Pending Approval & Invoice Pending
     setOrderApprovalMap((prev) => ({
@@ -1043,7 +1046,7 @@ export default function App() {
           orderNumber: sanitizeString(orderNumber, SCHEMA_LIMITS.ORDER_NUMBER_MAX),
           clientId: uid,
           clientName: sanitizeString(
-            userProfile.displayName,
+            resolvedOwnerName,
             SCHEMA_LIMITS.DISPLAY_NAME_MAX,
             'Studio Client'
           ),
@@ -1076,7 +1079,7 @@ export default function App() {
           senderId: uid,
           senderName: 'Elena Rostova (Lead Specialist)',
           senderRole: 'specialist',
-          body: `Order ${orderNumber} received (${payload.imageCount} frames · ${payload.turnaroundHours}h SLA). Status: Pending Admin Approval & Invoice Settlement.`,
+          body: `Order ${orderNumber} received (${payload.imageCount} frames · ${payload.turnaroundHours}h SLA). Status: 1. Order Status: Pending.`,
           attachmentName: payload.uploadedBatchNames[0] || '',
           createdAt: serverTimestamp(),
         });
@@ -1107,8 +1110,15 @@ export default function App() {
       const newOrder: OrderDoc = {
         id: orderId,
         orderNumber,
-        clientId: userProfile.uid,
-        clientName: userProfile.displayName,
+        clientId: resolvedOwnerId,
+        clientName: resolvedOwnerName,
+        clientEmail: resolvedClientEmail,
+        clientPhone: resolvedClientPhone,
+        companyName: resolvedCompanyName,
+        clientAddress: resolvedClientAddress,
+        clientWebsite: resolvedClientWebsite,
+        paymentTerms: invoicePaymentInfo.defaultPaymentTerms || 'Project',
+        paymentOption: invoicePaymentInfo.defaultPaymentOption || 'PayPal',
         projectTitle: payload.projectTitle,
         serviceCategory: payload.serviceCategory,
         imageCount: payload.imageCount,
@@ -1131,11 +1141,11 @@ export default function App() {
           {
             id: `msg_${Date.now()}`,
             orderId,
-            clientId: userProfile.uid,
+            clientId: resolvedOwnerId,
             senderId: 'specialist_elena',
             senderName: 'Elena Rostova',
             senderRole: 'specialist',
-            body: `Order ${orderNumber} received (${payload.imageCount} frames · ${payload.turnaroundHours}h SLA). Status: Pending Admin Approval & Invoice Settlement.`,
+            body: `Order ${orderNumber} received (${payload.imageCount} frames · ${payload.turnaroundHours}h SLA). Status: 1. Order Status: Pending.`,
             attachmentName: payload.uploadedBatchNames[0] || '',
             createdAt: new Date(),
           },
@@ -1144,7 +1154,7 @@ export default function App() {
       setNotifications((prev) => [
         {
           id: `notif_${Date.now()}`,
-          userId: userProfile.uid,
+          userId: resolvedOwnerId,
           type: 'payment_receipt',
           title: `Order Invoice (Pending) — Order ${orderNumber}`,
           message: `Invoice ${invoiceRef} generated for ${payload.imageCount} frames (${payload.outputFormat} · ${payload.turnaroundHours}h SLA) for "${payload.projectTitle}". Status: PENDING PAYMENT.`,
@@ -1170,8 +1180,14 @@ export default function App() {
 
   const handleSetOrderStage = async (
     order: OrderDoc,
-    targetStatus: OrderStatus | 'pending_approval'
+    targetStatus: OrderStatus | 'pending_approval',
+    deliveryDownloadUrl?: string
   ) => {
+    const resolvedDownloadUrl =
+      deliveryDownloadUrl !== undefined
+        ? deliveryDownloadUrl.trim()
+        : order.deliveryDownloadUrl || '';
+
     if (targetStatus === 'pending_approval') {
       setOrderApprovalMap((prev) => ({
         ...prev,
@@ -1197,6 +1213,7 @@ export default function App() {
                   status: 'queued',
                   progressPercent: 0,
                   deliveryReady: false,
+                  deliveryDownloadUrl: resolvedDownloadUrl,
                   updatedAt: new Date(),
                 }
               : o
@@ -1216,6 +1233,18 @@ export default function App() {
       PIPELINE_STAGES[0];
     const isNowCompleted = stageMeta.status === 'completed';
 
+    const notifTitle = isNowCompleted
+      ? `4. Ready for Delivery — Order ${order.orderNumber} (Download Link Ready)`
+      : `Order ${order.orderNumber} · ${stageMeta.label} (${stageMeta.progress}%)`;
+
+    const notifMessage = isNowCompleted
+      ? resolvedDownloadUrl
+        ? `Your completed files for Order ${order.orderNumber} are Ready for Delivery! Download Link: ${resolvedDownloadUrl} (Also sent to your email ${
+            order.clientEmail || 'on file'
+          }).`
+        : `${stageMeta.description}`
+      : stageMeta.description;
+
     if (firebaseUser) {
       const uid = order.clientId || firebaseUser.uid;
       try {
@@ -1230,10 +1259,8 @@ export default function App() {
         await setDoc(doc(db, 'notifications', notifId), {
           userId: uid,
           type: isNowCompleted ? 'delivery_ready' : 'order_status',
-          title: isNowCompleted
-            ? `Master Archive Ready — ${order.orderNumber} (100%)`
-            : `Order ${order.orderNumber} Approved · Stage: ${stageMeta.label} (${stageMeta.progress}%)`,
-          message: stageMeta.description,
+          title: sanitizeString(notifTitle, SCHEMA_LIMITS.NOTIF_TITLE_MAX),
+          message: sanitizeString(notifMessage, SCHEMA_LIMITS.NOTIF_MESSAGE_MAX),
           amountFormatted: '',
           invoiceRef: '',
           read: false,
@@ -1251,6 +1278,8 @@ export default function App() {
                 status: stageMeta.status,
                 progressPercent: stageMeta.progress,
                 deliveryReady: isNowCompleted,
+                deliveryDownloadUrl: resolvedDownloadUrl,
+                deliveryEmailSent: isNowCompleted && Boolean(resolvedDownloadUrl),
                 updatedAt: new Date(),
               }
             : o
@@ -1259,12 +1288,10 @@ export default function App() {
       setNotifications((prev) => [
         {
           id: `notif_${Date.now()}`,
-          userId: userProfile.uid,
+          userId: order.clientId || activeClientId,
           type: isNowCompleted ? 'delivery_ready' : 'order_status',
-          title: isNowCompleted
-            ? `Master Archive Ready — ${order.orderNumber} (100%)`
-            : `Order ${order.orderNumber} Approved · Stage: ${stageMeta.label} (${stageMeta.progress}%)`,
-          message: stageMeta.description,
+          title: notifTitle,
+          message: notifMessage,
           amountFormatted: '',
           invoiceRef: '',
           read: false,
@@ -1272,6 +1299,44 @@ export default function App() {
         },
         ...prev,
       ]);
+
+      if (isNowCompleted && resolvedDownloadUrl) {
+        const deliveryChatMsg: OrderMessageDoc = {
+          id: `msg_${Date.now()}_deliv`,
+          orderId: order.id,
+          clientId: order.clientId || activeClientId,
+          senderId: 'specialist_elena',
+          senderName: 'FixPhoto Studio Delivery Desk',
+          senderRole: 'specialist',
+          body: `Stage 04: Ready for Delivery! Your completed files for ${order.orderNumber} are ready. Click your download link to download: ${resolvedDownloadUrl} (An email with this download link has also been dispatched to ${
+            order.clientEmail || 'your email'
+          }).`,
+          attachmentName: resolvedDownloadUrl,
+          createdAt: new Date(),
+        };
+        setSandboxMessagesMap((prev) => ({
+          ...prev,
+          [order.id]: [...(prev[order.id] || []), deliveryChatMsg],
+        }));
+
+        if (order.clientEmail) {
+          void createAndDispatchClientQuery({
+            source: 'custom_quote_popup',
+            clientName: order.clientName || 'Client',
+            clientEmail: order.clientEmail,
+            clientPhone: order.clientPhone || '',
+            companyName: order.companyName || '',
+            serviceTitle: `READY FOR DELIVERY — ${order.orderNumber}`,
+            serviceSlug: 'delivery-ready',
+            instructions: `Download Link Sent to Customer: ${resolvedDownloadUrl}`,
+            sampleFiles: [resolvedDownloadUrl],
+            isLoggedInClient: true,
+            routedToPortal: true,
+            portalOrderNumber: order.orderNumber,
+            adminEmailRecipient: siteConfig.supportEmail || 'asiaclipp@gmail.com',
+          });
+        }
+      }
     }
   };
 
@@ -1355,6 +1420,14 @@ export default function App() {
     orderId: string,
     updates: {
       clientName?: string;
+      clientEmail?: string;
+      clientPhone?: string;
+      companyName?: string;
+      clientAddress?: string;
+      clientWebsite?: string;
+      paymentTerms?: InvoicePaymentTerms;
+      paymentOption?: InvoicePaymentOption;
+      deliveryDownloadUrl?: string;
       projectTitle?: string;
       imageCount?: number;
       totalPrice?: number;
@@ -1367,6 +1440,32 @@ export default function App() {
 
     const nextClientName =
       updates.clientName !== undefined ? updates.clientName : targetOrder.clientName;
+    const nextClientEmail =
+      updates.clientEmail !== undefined ? updates.clientEmail : targetOrder.clientEmail;
+    const nextClientPhone =
+      updates.clientPhone !== undefined ? updates.clientPhone : targetOrder.clientPhone;
+    const nextCompanyName =
+      updates.companyName !== undefined ? updates.companyName : targetOrder.companyName;
+    const nextClientAddress =
+      updates.clientAddress !== undefined
+        ? updates.clientAddress
+        : targetOrder.clientAddress;
+    const nextClientWebsite =
+      updates.clientWebsite !== undefined
+        ? updates.clientWebsite
+        : targetOrder.clientWebsite;
+    const nextPaymentTerms =
+      updates.paymentTerms !== undefined
+        ? updates.paymentTerms
+        : targetOrder.paymentTerms;
+    const nextPaymentOption =
+      updates.paymentOption !== undefined
+        ? updates.paymentOption
+        : targetOrder.paymentOption;
+    const nextDeliveryUrl =
+      updates.deliveryDownloadUrl !== undefined
+        ? updates.deliveryDownloadUrl
+        : targetOrder.deliveryDownloadUrl;
     const nextTitle =
       updates.projectTitle !== undefined ? updates.projectTitle : targetOrder.projectTitle;
     const nextCount =
@@ -1424,6 +1523,14 @@ export default function App() {
             ? {
                 ...o,
                 clientName: nextClientName,
+                clientEmail: nextClientEmail,
+                clientPhone: nextClientPhone,
+                companyName: nextCompanyName,
+                clientAddress: nextClientAddress,
+                clientWebsite: nextClientWebsite,
+                paymentTerms: nextPaymentTerms,
+                paymentOption: nextPaymentOption,
+                deliveryDownloadUrl: nextDeliveryUrl,
                 projectTitle: nextTitle,
                 imageCount: nextCount,
                 totalPrice: nextPrice,
@@ -1446,6 +1553,111 @@ export default function App() {
             : n
         )
       );
+    }
+  };
+
+  const handleUpdateClientProfile = async (payload: {
+    oldEmail: string;
+    newEmail: string;
+    name: string;
+    phone: string;
+    companyName: string;
+    billingAddress: string;
+    website?: string;
+    password?: string;
+  }) => {
+    const cleanNewEmail = payload.newEmail.trim().toLowerCase();
+    const cleanOldEmail = payload.oldEmail.trim().toLowerCase();
+    const oldClientId = getClientIdFromEmail(cleanOldEmail);
+    const newClientId = getClientIdFromEmail(cleanNewEmail);
+
+    setPortalClientName(payload.name);
+    setPortalClientEmail(cleanNewEmail);
+    setPortalClientPhone(payload.phone);
+    setPortalClientCompany(payload.companyName);
+    setPortalClientAddress(payload.billingAddress);
+    setPortalClientWebsite(payload.website || '');
+
+    setUserProfile((prev) => ({
+      ...prev,
+      displayName: payload.name || prev.displayName,
+      companyName: payload.companyName,
+      updatedAt: new Date(),
+    }));
+
+    setPrivateInfo((prev) =>
+      prev
+        ? {
+            ...prev,
+            email: cleanNewEmail || prev.email,
+            phone: payload.phone,
+            billingAddress: payload.billingAddress,
+            updatedAt: new Date(),
+          }
+        : null
+    );
+
+    if (firebaseUser) {
+      const uid = firebaseUser.uid;
+      try {
+        await updateDoc(doc(db, 'users', uid), {
+          displayName: sanitizeString(
+            payload.name || 'Studio Client',
+            SCHEMA_LIMITS.DISPLAY_NAME_MAX,
+            'Studio Client'
+          ),
+          companyName: sanitizeString(payload.companyName, 120),
+          updatedAt: serverTimestamp(),
+        });
+        await updateDoc(doc(db, 'users', uid, 'private', 'info'), {
+          email: sanitizeString(
+            cleanNewEmail || firebaseUser.email || 'client@fixphotostudio.com',
+            SCHEMA_LIMITS.EMAIL_MAX,
+            'client@fixphotostudio.com'
+          ),
+          phone: sanitizeString(payload.phone, SCHEMA_LIMITS.PHONE_MAX),
+          billingAddress: sanitizeString(payload.billingAddress, SCHEMA_LIMITS.ADDRESS_MAX),
+          updatedAt: serverTimestamp(),
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `users/${uid}`);
+      }
+    } else {
+      // Update all orders belonging to this client so their invoices reflect the updated billing info
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.clientId === oldClientId || o.clientId === newClientId
+            ? {
+                ...o,
+                clientId: newClientId || o.clientId,
+                clientName: payload.name || o.clientName,
+                clientEmail: cleanNewEmail || o.clientEmail,
+                clientPhone: payload.phone,
+                companyName: payload.companyName,
+                clientAddress: payload.billingAddress,
+                clientWebsite: payload.website || '',
+                updatedAt: new Date(),
+              }
+            : o
+        )
+      );
+
+      if (oldClientId && newClientId && oldClientId !== newClientId) {
+        setNotifications((prev) =>
+          prev.map((n) =>
+            n.userId === oldClientId ? { ...n, userId: newClientId } : n
+          )
+        );
+        setSandboxMessagesMap((prev) => {
+          const next: Record<string, OrderMessageDoc[]> = {};
+          for (const [ordId, msgs] of Object.entries(prev)) {
+            next[ordId] = msgs.map((m) =>
+              m.clientId === oldClientId ? { ...m, clientId: newClientId } : m
+            );
+          }
+          return next;
+        });
+      }
     }
   };
 
@@ -1498,12 +1710,13 @@ export default function App() {
         handleFirestoreError(err, OperationType.CREATE, `orders/${order.id}/messages`);
       }
     } else {
+      const ownerId = order.clientId || activeClientId || 'guest_client';
       const clientMsg: OrderMessageDoc = {
         id: `msg_${Date.now()}_c`,
         orderId: order.id,
-        clientId: userProfile.uid,
-        senderId: userProfile.uid,
-        senderName: userProfile.displayName,
+        clientId: ownerId,
+        senderId: ownerId,
+        senderName: activeClientDisplayName,
         senderRole: 'client',
         body: cleanBody,
         attachmentName: cleanAttachment,
@@ -1512,7 +1725,7 @@ export default function App() {
       const specialistReply: OrderMessageDoc = {
         id: `msg_${Date.now() + 1}_s`,
         orderId: order.id,
-        clientId: userProfile.uid,
+        clientId: ownerId,
         senderId: 'specialist_elena',
         senderName: 'Elena Rostova',
         senderRole: 'specialist',
@@ -1590,7 +1803,7 @@ export default function App() {
       setNotifications((prev) => [
         {
           id: `notif_sub_${Date.now()}`,
-          userId: userProfile.uid,
+          userId: activeClientId || 'guest_client',
           type: 'payment_receipt',
           title: `Subscription Invoice (Pending) — ${spec.name} (${cycle.toUpperCase()})`,
           message: `Provisioned ${spec.monthlyCredits.toLocaleString()} monthly image credits with ${spec.slaHours}. Status: PENDING PAYMENT.`,
@@ -1671,8 +1884,8 @@ export default function App() {
   }): Promise<ClientQueryItem> => {
     const newQuery = await createAndDispatchClientQuery({
       ...payload,
-      isLoggedInClient: Boolean(firebaseUser),
-      routedToPortal: Boolean(firebaseUser),
+      isLoggedInClient: isClientAuthenticated,
+      routedToPortal: isClientAuthenticated,
       adminEmailRecipient: siteConfig.supportEmail || 'asiaclipp@gmail.com',
     });
     setClientQueries((prev) => [newQuery, ...prev]);
@@ -1690,34 +1903,33 @@ export default function App() {
       servicesList.find((s) => s.slug === trialServiceSlug) || servicesList[0];
     const customerFileNames = trialUploadedFiles.map((f) => f.name);
 
-    let createdOrderNum: string | undefined;
-    if (firebaseUser) {
-      createdOrderNum = await handleCreateOrder(
-        {
-          projectTitle: `FREE ${
-            trialDivision === 'video_editing' ? 'VIDEO' : '5-IMAGE'
-          } TRIAL — ${chosenService.shortNavTitle} (${trialName.trim()})`,
-          serviceCategory: chosenService.id,
-          imageCount:
-            customerFileNames.length > 0
-              ? customerFileNames.length
-              : trialDivision === 'video_editing'
-              ? 1
-              : 5,
-          turnaroundHours: 12,
-          outputFormat: 'PSD_LAYERED',
-          backgroundSpec: 'PURE_WHITE_FFFFFF',
-          instructions:
-            trialInstructions.trim() ||
-            `Complimentary Studio Quality Test for ${trialEmail}${
-              trialPhone.trim() ? ` (Tel: ${trialPhone.trim()})` : ''
-            }. Execute 400% zoom QA.`,
-          totalPrice: 0,
-          uploadedBatchNames: customerFileNames,
-        },
-        { redirectToPortal: false }
-      );
-    }
+    const createdOrderNum = await handleCreateOrder(
+      {
+        projectTitle: `FREE ${
+          trialDivision === 'video_editing' ? 'VIDEO' : '5-IMAGE'
+        } TRIAL — ${chosenService.shortNavTitle} (${trialName.trim()})`,
+        serviceCategory: chosenService.id,
+        imageCount:
+          customerFileNames.length > 0
+            ? customerFileNames.length
+            : trialDivision === 'video_editing'
+            ? 1
+            : 5,
+        turnaroundHours: 12,
+        outputFormat: 'PSD_LAYERED',
+        backgroundSpec: 'PURE_WHITE_FFFFFF',
+        instructions:
+          trialInstructions.trim() ||
+          `Complimentary Studio Quality Test for ${trialEmail}${
+            trialPhone.trim() ? ` (Tel: ${trialPhone.trim()})` : ''
+          }. Execute 400% zoom QA.`,
+        totalPrice: 0,
+        uploadedBatchNames: customerFileNames,
+        clientName: trialName.trim(),
+        clientEmail: trialEmail.trim(),
+      },
+      { redirectToPortal: false }
+    );
 
     const createdQuery = await handleSubmitPublicQuery({
       source: 'home_trial_form',
@@ -1737,7 +1949,7 @@ export default function App() {
     setTrialSuccessNotice({
       queryNumber: createdQuery.queryNumber,
       orderNumber: createdOrderNum,
-      routedToPortal: Boolean(firebaseUser),
+      routedToPortal: isClientAuthenticated,
       serviceTitle: chosenService.shortNavTitle,
       clientName: trialName.trim(),
       clientEmail: trialEmail.trim(),
@@ -2155,9 +2367,43 @@ export default function App() {
           (item) => item.category === videoPortfolioFilter
         );
 
+  // Strict Per-User Isolation for Client Portal (New users see 0 orders / 0 notifications)
+  const clientPortalOrders = firebaseUser
+    ? orders.filter((o) => o.clientId === firebaseUser.uid)
+    : activeClientId
+    ? orders.filter((o) => o.clientId === activeClientId)
+    : [];
+
+  const clientPortalNotifications = firebaseUser
+    ? notifications.filter((n) => n.userId === firebaseUser.uid)
+    : activeClientId
+    ? notifications.filter((n) => n.userId === activeClientId)
+    : [];
+
+  const clientPortalUsedCredits = clientPortalOrders.reduce(
+    (sum, o) => sum + (o.imageCount || 0),
+    0
+  );
+
+  const clientPortalProfile: UserProfileDoc = {
+    ...userProfile,
+    uid: activeClientId,
+    displayName: activeClientDisplayName,
+    usedCredits: firebaseUser
+      ? userProfile.usedCredits
+      : clientPortalUsedCredits,
+  };
+
+  const effectiveSelectedOrderId =
+    clientPortalOrders.some((o) => o.id === selectedOrderId)
+      ? selectedOrderId
+      : clientPortalOrders[0]?.id || '';
+
   const currentOrderMessages = firebaseUser
     ? liveMessages
-    : sandboxMessagesMap[selectedOrderId] || [];
+    : effectiveSelectedOrderId
+    ? sandboxMessagesMap[effectiveSelectedOrderId] || []
+    : [];
 
   const videoDivisionServices = servicesList.filter(
     (s) => s.division === 'video_editing'
@@ -2557,14 +2803,14 @@ export default function App() {
           <ClientPortalView
             isAuthenticated={Boolean(firebaseUser)}
             isSigningIn={isSigningIn}
-            userEmail={firebaseUser?.email || null}
-            userProfile={userProfile}
+            userEmail={firebaseUser?.email || portalClientEmail || null}
+            userProfile={clientPortalProfile}
             mfaSessionVerified={mfaSessionVerified}
-            orders={orders}
-            selectedOrderId={selectedOrderId}
+            orders={clientPortalOrders}
+            selectedOrderId={effectiveSelectedOrderId}
             onSelectOrder={setSelectedOrderId}
             messages={currentOrderMessages}
-            notifications={notifications}
+            notifications={clientPortalNotifications}
             orderApprovalMap={orderApprovalMap}
             invoicePaymentInfo={invoicePaymentInfo}
             invoiceStatusMap={invoiceStatusMap}
@@ -2576,7 +2822,17 @@ export default function App() {
             onSendMessage={handleSendMessage}
             onMarkNotificationRead={handleMarkNotificationRead}
             onChangeSubscriptionPlan={handleChangeSubscriptionPlan}
-            onClientPortalSessionChange={setPortalClientName}
+            onClientPortalSessionChange={(session) => {
+              setPortalClientName(session ? session.name : null);
+              setPortalClientEmail(
+                session ? session.email.trim().toLowerCase() : null
+              );
+              setPortalClientPhone(session?.phone || '');
+              setPortalClientCompany(session?.companyName || '');
+              setPortalClientAddress(session?.billingAddress || '');
+              setPortalClientWebsite(session?.website || '');
+            }}
+            onUpdateClientProfile={handleUpdateClientProfile}
             onOpenAdminDashboard={() => {
               setActivePage('admin_login');
               window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -4006,7 +4262,7 @@ export default function App() {
         isOpen={freeTrialModalOpen}
         onClose={() => setFreeTrialModalOpen(false)}
         services={servicesList}
-        isAuthenticatedClient={Boolean(firebaseUser)}
+        isAuthenticatedClient={isClientAuthenticated}
         onSubmitPublicQuery={async (q) => {
           const created = await handleSubmitPublicQuery({
             source: 'free_trial_popup',
@@ -4015,7 +4271,9 @@ export default function App() {
           return { queryNumber: created.queryNumber };
         }}
         onSubmitTrialOrder={async (payload) => {
-          await handleCreateOrder(payload);
+          await handleCreateOrder(payload, {
+            redirectToPortal: isClientAuthenticated,
+          });
         }}
         onExploreService={(slug) => navigateToServicePage(slug)}
       />
@@ -4024,7 +4282,7 @@ export default function App() {
         isOpen={getQuoteModalOpen}
         onClose={() => setGetQuoteModalOpen(false)}
         services={servicesList}
-        isAuthenticatedClient={Boolean(firebaseUser)}
+        isAuthenticatedClient={isClientAuthenticated}
         onSubmitPublicQuery={async (q) => {
           const created = await handleSubmitPublicQuery({
             source: 'custom_quote_popup',
@@ -4033,7 +4291,9 @@ export default function App() {
           return { queryNumber: created.queryNumber };
         }}
         onSubmitQuoteOrder={async (payload) => {
-          await handleCreateOrder(payload);
+          await handleCreateOrder(payload, {
+            redirectToPortal: isClientAuthenticated,
+          });
         }}
         onOpenFreeTrial={() => {
           setGetQuoteModalOpen(false);

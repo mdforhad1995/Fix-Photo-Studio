@@ -18,6 +18,7 @@ import {
   StudioBlogPost,
 } from '../data/studioCatalog';
 import { BeforeAfterStudioCanvas } from './StudioArtworks';
+import { RichContentRenderer } from './RichTextEditor';
 
 interface StudioBlogSectionProps {
   blogPosts: StudioBlogPost[];
@@ -551,14 +552,10 @@ export const StudioBlogsPage: React.FC<StudioBlogsPageProps> = ({
                       {activePost.excerpt}
                     </div>
 
-                    <div className="space-y-4 text-sm sm:text-[15px] text-slate-700 leading-relaxed">
-                      {activePost.content
-                        .split('\n\n')
-                        .filter(Boolean)
-                        .map((paragraph, pIdx) => (
-                          <p key={pIdx}>{paragraph}</p>
-                        ))}
-                    </div>
+                    <RichContentRenderer
+                      content={activePost.content}
+                      className="text-sm sm:text-[15px] text-slate-700 leading-relaxed"
+                    />
 
                     {/* Author & Related Service Footer inside Article */}
                     <div className="pt-6 border-t border-[#DCE6F2] flex flex-wrap items-center justify-between gap-4">

@@ -93,6 +93,7 @@ import { ClientPortalView } from './components/ClientPortalView';
 import { ServiceDetailPage } from './components/ServiceDetailPage';
 import { AllServicesPage } from './components/AllServicesPage';
 import { CustomerReviewsSection } from './components/CustomerReviewsSection';
+import { RichContentRenderer } from './components/RichTextEditor';
 import {
   StudioBlogSection,
   StudioBlogsPage,
@@ -3242,9 +3243,10 @@ export default function App() {
                     {siteConfig.heroHeadline}
                   </h1>
 
-                  <p className="text-base text-slate-600 leading-relaxed max-w-[62ch]">
-                    {siteConfig.heroSubtitle}
-                  </p>
+                  <RichContentRenderer
+                    content={siteConfig.heroSubtitle}
+                    className="text-base text-slate-600 leading-relaxed max-w-[62ch]"
+                  />
                 </div>
 
                 <div className="pt-6 space-y-5">
@@ -3619,50 +3621,78 @@ export default function App() {
                   </div>
 
                   <form onSubmit={handleFreeTrialSubmit} className="space-y-3.5">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                          Your Name *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={trialName}
-                          onChange={(e) => setTrialName(e.target.value)}
-                          placeholder="Alex Rivera"
-                          className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
-                        />
+                    {isClientAuthenticated ? (
+                      <div className="p-3 rounded-xl bg-[#EAF3FC] border border-[#B8D0EB] flex items-center justify-between gap-2 text-xs">
+                        <div>
+                          <p className="text-[10px] font-mono-tabular font-bold text-[#0088FF] uppercase">
+                            AUTO-FILLED FROM YOUR PROFILE
+                          </p>
+                          <p className="font-bold text-[#001E5A] mt-0.5">
+                            {activeClientProfileData.name}{' '}
+                            {activeClientProfileData.companyName
+                              ? `(${activeClientProfileData.companyName})`
+                              : ''}
+                          </p>
+                          <p className="text-[11px] font-mono-tabular text-slate-600">
+                            {activeClientProfileData.email}
+                            {activeClientProfileData.phone
+                              ? ` · ${activeClientProfileData.phone}`
+                              : ''}
+                          </p>
+                        </div>
+                        <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono-tabular text-[10px] font-bold shrink-0">
+                          Signed In ✓
+                        </span>
                       </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                          Studio Work Email *
-                        </label>
-                        <input
-                          type="email"
-                          required
-                          value={trialEmail}
-                          onChange={(e) => setTrialEmail(e.target.value)}
-                          placeholder="alex@brandstudio.com"
-                          className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
-                        />
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                            Your Name *
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={trialName}
+                            onChange={(e) => setTrialName(e.target.value)}
+                            placeholder="Alex Rivera"
+                            className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                            Studio Work Email *
+                          </label>
+                          <input
+                            type="email"
+                            required
+                            value={trialEmail}
+                            onChange={(e) => setTrialEmail(e.target.value)}
+                            placeholder="alex@brandstudio.com"
+                            className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
+                          />
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                          Phone / WhatsApp Number
-                        </label>
-                        <input
-                          type="tel"
-                          value={trialPhone}
-                          onChange={(e) => setTrialPhone(e.target.value)}
-                          placeholder="+1 (212) 555-0194"
-                          className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
-                        />
-                      </div>
+                      {!isClientAuthenticated && (
+                        <div>
+                          <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                            Phone / WhatsApp Number *
+                          </label>
+                          <input
+                            type="tel"
+                            required
+                            value={trialPhone}
+                            onChange={(e) => setTrialPhone(e.target.value)}
+                            placeholder="+1 (212) 555-0194"
+                            className="w-full px-3 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
+                          />
+                        </div>
+                      )}
 
-                      <div>
+                      <div className={isClientAuthenticated ? 'sm:col-span-2' : ''}>
                         <label className="block text-xs font-semibold text-[#001E5A] mb-1">
                           Select Trial Service
                         </label>
@@ -4229,10 +4259,13 @@ export default function App() {
                 <span>·</span>
                 <button
                   type="button"
-                  onClick={() => setMfaModalOpen(true)}
+                  onClick={() => {
+                    setActivePage('portal');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
                   className="hover:underline"
                 >
-                  2FA Vault
+                  Your Profile
                 </button>
               </div>
             </div>
@@ -4253,6 +4286,8 @@ export default function App() {
         isOpen={newOrderModalOpen}
         onClose={() => setNewOrderModalOpen(false)}
         initialService={preselectedService}
+        isAuthenticatedClient={isClientAuthenticated}
+        clientProfileData={activeClientProfileData}
         onSubmitOrder={async (payload) => {
           await handleCreateOrder(payload);
         }}
@@ -4263,6 +4298,7 @@ export default function App() {
         onClose={() => setFreeTrialModalOpen(false)}
         services={servicesList}
         isAuthenticatedClient={isClientAuthenticated}
+        clientProfileData={activeClientProfileData}
         onSubmitPublicQuery={async (q) => {
           const created = await handleSubmitPublicQuery({
             source: 'free_trial_popup',
@@ -4283,6 +4319,7 @@ export default function App() {
         onClose={() => setGetQuoteModalOpen(false)}
         services={servicesList}
         isAuthenticatedClient={isClientAuthenticated}
+        clientProfileData={activeClientProfileData}
         onSubmitPublicQuery={async (q) => {
           const created = await handleSubmitPublicQuery({
             source: 'custom_quote_popup',

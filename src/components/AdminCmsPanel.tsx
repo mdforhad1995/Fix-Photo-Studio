@@ -31,6 +31,8 @@ import {
   AlertCircle,
   Sparkles,
   BookOpen,
+  Pencil,
+  X,
 } from 'lucide-react';
 import {
   PortfolioItem,
@@ -59,6 +61,7 @@ import {
   StudioBlogPost,
 } from '../data/studioCatalog';
 import { BeforeAfterStudioCanvas } from './StudioArtworks';
+import { RichTextEditor } from './RichTextEditor';
 
 export interface PageSeoSpec {
   seoTitle: string;
@@ -530,6 +533,59 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
   const [newBlogSeoTitle, setNewBlogSeoTitle] = useState('');
   const [newBlogSeoDesc, setNewBlogSeoDesc] = useState('');
 
+  // 7. Standard CMS List + Edit Icon + Save/Publish + "+ Add New" Workflow States
+  const [showAddNewServiceForm, setShowAddNewServiceForm] = useState(false);
+  const [showAddNewPortfolioForm, setShowAddNewPortfolioForm] = useState(false);
+  const [showAddNewVideoForm, setShowAddNewVideoForm] = useState(false);
+  const [showAddNewReviewForm, setShowAddNewReviewForm] = useState(false);
+  const [showAddNewBlogForm, setShowAddNewBlogForm] = useState(false);
+
+  // Invoice & Billing Edit States
+  const [editingOrderInvoiceDraft, setEditingOrderInvoiceDraft] = useState<{
+    orderId: string;
+    paymentTerms: InvoicePaymentTerms;
+    paymentOption: InvoicePaymentOption;
+    projectTitle: string;
+    imageCount: number;
+    totalPrice: number;
+    companyName: string;
+    clientName: string;
+    clientAddress: string;
+    clientPhone: string;
+    clientWebsite: string;
+    clientEmail: string;
+  } | null>(null);
+  const [isEditingInvoiceSettings, setIsEditingInvoiceSettings] =
+    useState(false);
+  const [invoiceSettingsDraft, setInvoiceSettingsDraft] =
+    useState<InvoicePaymentInfo>(invoicePaymentInfo);
+
+  // Service Pages & Main Menu Edit Drafts
+  const [isServiceEditorOpen, setIsServiceEditorOpen] = useState(false);
+  const [editingServiceDraft, setEditingServiceDraft] =
+    useState<ServiceDefinition | null>(null);
+  const [editingMainMenuDraft, setEditingMainMenuDraft] =
+    useState<MainMenuPhotoServiceItem | null>(null);
+
+  // Portfolio, Video, Reviews, Blog, SEO, and Global Site Settings Edit Drafts
+  const [editingPortfolioDraft, setEditingPortfolioDraft] =
+    useState<PortfolioItem | null>(null);
+  const [editingVideoDraft, setEditingVideoDraft] =
+    useState<VideoShowreelProject | null>(null);
+  const [editingReviewDraft, setEditingReviewDraft] =
+    useState<CustomerReviewItem | null>(null);
+  const [editingBlogDraft, setEditingBlogDraft] =
+    useState<StudioBlogPost | null>(null);
+  const [editingSeoDraft, setEditingSeoDraft] = useState<{
+    type: 'main_page' | 'service_page' | 'blog_post';
+    id: string;
+    seoTitle: string;
+    seoMetaDescription: string;
+  } | null>(null);
+  const [isEditingSiteSettings, setIsEditingSiteSettings] = useState(false);
+  const [siteSettingsDraft, setSiteSettingsDraft] =
+    useState<SiteGlobalConfig>(siteConfig);
+
   const notifySaved = (msg: string) => {
     setSaveToast(msg);
     window.setTimeout(() => {
@@ -796,6 +852,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
     setNewPfBrand('');
     setNewPfBeforeImg('');
     setNewPfAfterImg('');
+    setShowAddNewPortfolioForm(false);
     notifySaved(
       `Published new Before/After Portfolio item "${created.title}" to the live Portfolio page!`
     );
@@ -808,6 +865,13 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
   ) => {
     if (!file) return;
     readImageFileAsDataUrl(file, (dataUrl) => {
+      if (editingServiceDraft && editingServiceDraft.slug === slug) {
+        setEditingServiceDraft(
+          side === 'before'
+            ? { ...editingServiceDraft, beforeImageUrl: dataUrl }
+            : { ...editingServiceDraft, afterImageUrl: dataUrl }
+        );
+      }
       const next = servicesList.map((s) => {
         if (s.slug !== slug) return s;
         return side === 'before'
@@ -950,6 +1014,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
     setNewSrvAfterImg('');
     setNewSrvSeoTitle('');
     setNewSrvSeoDesc('');
+    setShowAddNewServiceForm(false);
     notifySaved(
       `Created new Custom Service Page "${created.title}" (${created.indexNumber}) with SEO metadata!`
     );
@@ -975,10 +1040,12 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
     };
 
     const existing = service.sampleGallery || [];
+    const updatedService = { ...service, sampleGallery: [sampleItem, ...existing] };
+    if (editingServiceDraft && editingServiceDraft.slug === service.slug) {
+      setEditingServiceDraft(updatedService);
+    }
     const next = servicesList.map((s) =>
-      s.slug === service.slug
-        ? { ...s, sampleGallery: [sampleItem, ...existing] }
-        : s
+      s.slug === service.slug ? updatedService : s
     );
     onUpdateServicesList(next);
     setNewSampleTitle('');
@@ -1001,8 +1068,12 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
       answer: newFaqAnswer.trim(),
     };
     const existing = service.faqs || [];
+    const updatedService = { ...service, faqs: [...existing, faqItem] };
+    if (editingServiceDraft && editingServiceDraft.slug === service.slug) {
+      setEditingServiceDraft(updatedService);
+    }
     const next = servicesList.map((s) =>
-      s.slug === service.slug ? { ...s, faqs: [...existing, faqItem] } : s
+      s.slug === service.slug ? updatedService : s
     );
     onUpdateServicesList(next);
     setNewFaqQuestion('');
@@ -1044,10 +1115,15 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
     };
 
     const existing = service.editorialBlocks || [];
+    const updatedService = {
+      ...service,
+      editorialBlocks: [...existing, newBlock],
+    };
+    if (editingServiceDraft && editingServiceDraft.slug === service.slug) {
+      setEditingServiceDraft(updatedService);
+    }
     const next = servicesList.map((s) =>
-      s.slug === service.slug
-        ? { ...s, editorialBlocks: [...existing, newBlock] }
-        : s
+      s.slug === service.slug ? updatedService : s
     );
     onUpdateServicesList(next);
     setNewEditorialHeadline('');
@@ -1093,6 +1169,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
     onUpdateVideoShowreelProjects([created, ...videoShowreelProjects]);
     setNewVidTitle('');
     setNewVidClient('');
+    setShowAddNewVideoForm(false);
     notifySaved(`Published new Video Showreel project "${created.title}"!`);
   };
 
@@ -1135,6 +1212,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
     setRevHeadline('');
     setRevQuote('');
     setRevOutcome('');
+    setShowAddNewReviewForm(false);
     notifySaved(
       `Published verified review from "${created.clientName}" to the 3-card carousel!`
     );
@@ -1189,6 +1267,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
     setNewBlogCoverImg('');
     setNewBlogSeoTitle('');
     setNewBlogSeoDesc('');
+    setShowAddNewBlogForm(false);
     notifySaved(
       `Published new Blog Post "${createdBlog.title}" as #1 (First) on the Website!`
     );
@@ -1808,9 +1887,6 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
   // =========================================================================
   // PAGE 2: DEDICATED STANDALONE PROFESSIONAL ADMIN DASHBOARD (#admin-dashboard)
   // =========================================================================
-  const activeEditService =
-    servicesList.find((s) => s.slug === editingServiceSlug) || servicesList[0];
-
   const photoPodsCount = servicesList.filter(
     (s) => s.division === 'photo_editing'
   ).length;
@@ -2951,23 +3027,23 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
              =================================================================== */}
           {activeTab === 'invoices_billing' && (
             <div className="space-y-8">
-              {/* SECTION A: EDIT ORDER INVOICE LINE ITEMS, BILL TO FIELDS, PAYMENT TERMS/OPTION & PAID/PENDING STATUS */}
+              {/* SECTION A: CUSTOMER INVOICES LIST (CLICK EDIT ICON TO EDIT & SAVE) */}
               <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
                   <div>
                     <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
-                      ADMIN-ONLY INVOICE & LINE ITEM EDITOR (CLIENT READ-ONLY PDF)
+                      CUSTOMER INVOICES & PAYMENT STATUS ({orders.length} INVOICES)
                     </p>
                     <h2 className="text-lg font-bold text-[#001E5A]">
-                      Edit Customer Invoice Line Items, Payment Terms (Monthly / Project), Payment Option (PayPal / Bank) & BILL TO ({orders.length} Orders)
+                      Customer Invoices List — Click Edit Icon to Modify Line Items, Terms, Option or BILL TO
                     </h2>
                   </div>
                   <span className="text-xs font-mono-tabular text-slate-500">
-                    Only non-empty BILL TO fields are shown on customer invoices
+                    Click &ldquo;Edit&rdquo; on any invoice, make changes, and click &ldquo;Save&rdquo; to update
                   </span>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-3.5">
                   {orders.map((ord) => {
                     const invRef = `INV-${ord.orderNumber}`;
                     const ordInvoiceStatus: InvoicePaymentStatus =
@@ -2982,41 +3058,75 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                       ord.paymentOption ||
                       invoicePaymentInfo.defaultPaymentOption ||
                       'PayPal';
+                    const isEditingThisInvoice =
+                      editingOrderInvoiceDraft?.orderId === ord.id;
 
                     return (
                       <div
                         key={ord.id}
-                        className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-3.5"
+                        className={`p-4 rounded-xl border transition-all ${
+                          isEditingThisInvoice
+                            ? 'bg-blue-50/40 border-[#0088FF] shadow-xs space-y-4'
+                            : 'bg-[#F8FAFC] border-slate-200 space-y-2.5'
+                        }`}
                       >
-                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-2.5">
-                          <div className="flex flex-wrap items-center gap-2 text-xs font-mono-tabular">
-                            <span className="font-bold text-[#001E5A] text-sm">
-                              {invRef}
-                            </span>
-                            <span>·</span>
-                            <span className="text-slate-500">
-                              Order: {ord.orderNumber}
-                            </span>
-                            <span>·</span>
-                            <span className="px-2 py-0.5 rounded bg-blue-50 text-[#001E5A] border border-blue-200 font-bold text-[11px]">
-                              Terms: {ordPaymentTerms}
-                            </span>
-                            <span className="px-2 py-0.5 rounded bg-blue-50 text-[#0088FF] border border-blue-200 font-bold text-[11px]">
-                              Option: {ordPaymentOption}
-                            </span>
-                            <span>·</span>
-                            {ordInvoiceStatus === 'paid' ? (
-                              <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[11px]">
-                                PAID & CONFIRMED ✓
+                        {/* Clean Summary Row */}
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2 text-xs font-mono-tabular">
+                              <span className="font-bold text-[#001E5A] text-sm">
+                                {invRef}
                               </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[11px]">
-                                PENDING PAYMENT
+                              <span>·</span>
+                              <span className="text-slate-500">
+                                Order: {ord.orderNumber}
                               </span>
-                            )}
+                              <span>·</span>
+                              <span className="px-2 py-0.5 rounded bg-blue-50 text-[#001E5A] border border-blue-200 font-bold text-[11px]">
+                                Terms: {ordPaymentTerms}
+                              </span>
+                              <span className="px-2 py-0.5 rounded bg-blue-50 text-[#0088FF] border border-blue-200 font-bold text-[11px]">
+                                Option: {ordPaymentOption}
+                              </span>
+                              <span>·</span>
+                              {ordInvoiceStatus === 'paid' ? (
+                                <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[11px]">
+                                  PAID & CONFIRMED ✓
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[11px]">
+                                  PENDING PAYMENT
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                              <span className="font-bold text-[#001E5A]">
+                                {ord.projectTitle}
+                              </span>
+                              <span className="font-mono-tabular text-slate-600">
+                                Qty: <strong>{ord.imageCount}</strong> frames
+                              </span>
+                              <span className="font-mono-tabular font-bold text-[#0088FF]">
+                                Total: ${ord.totalPrice.toFixed(2)} USD
+                              </span>
+                              <span className="text-slate-600">
+                                BILL TO:{' '}
+                                <strong>
+                                  {[
+                                    ord.companyName,
+                                    ord.clientName,
+                                    ord.clientEmail,
+                                    ord.clientPhone,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' · ') || 'Client Account'}
+                                </strong>
+                              </span>
+                            </div>
                           </div>
 
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <button
                               type="button"
                               onClick={async () => {
@@ -3057,235 +3167,322 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                             >
                               Set PENDING
                             </button>
+
+                            {!isEditingThisInvoice ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditingOrderInvoiceDraft({
+                                    orderId: ord.id,
+                                    paymentTerms: ordPaymentTerms,
+                                    paymentOption: ordPaymentOption,
+                                    projectTitle: ord.projectTitle || '',
+                                    imageCount: ord.imageCount || 1,
+                                    totalPrice: ord.totalPrice || 0,
+                                    companyName: ord.companyName || '',
+                                    clientName: ord.clientName || '',
+                                    clientAddress: ord.clientAddress || '',
+                                    clientPhone: ord.clientPhone || '',
+                                    clientWebsite: ord.clientWebsite || '',
+                                    clientEmail: ord.clientEmail || '',
+                                  })
+                                }
+                                className="px-3 py-1.5 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5"
+                              >
+                                <Pencil className="w-3.5 h-3.5 text-[#0088FF]" />
+                                <span>Edit</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditingOrderInvoiceDraft(null)
+                                }
+                                className="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold transition-colors flex items-center gap-1"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>Cancel</span>
+                              </button>
+                            )}
                           </div>
                         </div>
 
-                        {/* Row 1: Payment Terms, Payment Option, Project Description, Qty, Amount */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
-                          <div>
-                            <label className="block text-[11px] font-bold text-[#001E5A] mb-1">
-                              Payment Terms
-                            </label>
-                            <select
-                              value={ordPaymentTerms}
-                              onChange={(e) => {
-                                if (onUpdateOrderInvoiceDetails) {
-                                  onUpdateOrderInvoiceDetails(ord.id, {
-                                    paymentTerms: e.target
-                                      .value as InvoicePaymentTerms,
-                                  });
-                                }
-                              }}
-                              className="w-full px-2.5 py-1.5 text-xs font-bold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
-                            >
-                              <option value="Project">Project</option>
-                              <option value="Monthly">Monthly</option>
-                            </select>
-                          </div>
+                        {/* Collapsible Edit Form (Only shown when Edit icon is clicked) */}
+                        {isEditingThisInvoice && editingOrderInvoiceDraft && (
+                          <div className="pt-3 border-t border-blue-200 space-y-3.5 bg-white p-4 rounded-xl">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+                              <div>
+                                <label className="block text-[11px] font-bold text-[#001E5A] mb-1">
+                                  Payment Terms
+                                </label>
+                                <select
+                                  value={editingOrderInvoiceDraft.paymentTerms}
+                                  onChange={(e) =>
+                                    setEditingOrderInvoiceDraft({
+                                      ...editingOrderInvoiceDraft,
+                                      paymentTerms: e.target
+                                        .value as InvoicePaymentTerms,
+                                    })
+                                  }
+                                  className="w-full px-2.5 py-1.5 text-xs font-bold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
+                                >
+                                  <option value="Project">Project</option>
+                                  <option value="Monthly">Monthly</option>
+                                </select>
+                              </div>
 
-                          <div>
-                            <label className="block text-[11px] font-bold text-[#0088FF] mb-1">
-                              Payment Option
-                            </label>
-                            <select
-                              value={ordPaymentOption}
-                              onChange={(e) => {
-                                if (onUpdateOrderInvoiceDetails) {
-                                  onUpdateOrderInvoiceDetails(ord.id, {
-                                    paymentOption: e.target
-                                      .value as InvoicePaymentOption,
-                                  });
-                                }
-                              }}
-                              className="w-full px-2.5 py-1.5 text-xs font-bold text-[#0088FF] bg-white border border-slate-300 rounded-lg"
-                            >
-                              <option value="PayPal">
-                                PayPal ({invoicePaymentInfo.paypalEmail || 'hello@clippasia.com'})
-                              </option>
-                              <option value="Bank">
-                                Bank ({invoicePaymentInfo.bankName || 'Dutch Bangla Bank PLC'})
-                              </option>
-                            </select>
-                          </div>
+                              <div>
+                                <label className="block text-[11px] font-bold text-[#0088FF] mb-1">
+                                  Payment Option
+                                </label>
+                                <select
+                                  value={editingOrderInvoiceDraft.paymentOption}
+                                  onChange={(e) =>
+                                    setEditingOrderInvoiceDraft({
+                                      ...editingOrderInvoiceDraft,
+                                      paymentOption: e.target
+                                        .value as InvoicePaymentOption,
+                                    })
+                                  }
+                                  className="w-full px-2.5 py-1.5 text-xs font-bold text-[#0088FF] bg-white border border-slate-300 rounded-lg"
+                                >
+                                  <option value="PayPal">
+                                    PayPal (
+                                    {invoicePaymentInfo.paypalEmail ||
+                                      'hello@clippasia.com'}
+                                    )
+                                  </option>
+                                  <option value="Bank">
+                                    Bank (
+                                    {invoicePaymentInfo.bankName ||
+                                      'Dutch Bangla Bank PLC'}
+                                    )
+                                  </option>
+                                </select>
+                              </div>
 
-                          <div className="lg:col-span-2">
-                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                              Invoice Project / Service Description
-                            </label>
-                            <input
-                              type="text"
-                              value={ord.projectTitle}
-                              onChange={(e) => {
-                                if (onUpdateOrderInvoiceDetails) {
-                                  onUpdateOrderInvoiceDetails(ord.id, {
-                                    projectTitle: e.target.value,
-                                  });
-                                }
-                              }}
-                              className="w-full px-2.5 py-1.5 text-xs font-semibold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
-                            />
-                          </div>
+                              <div className="lg:col-span-2">
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                  Invoice Project / Service Description
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editingOrderInvoiceDraft.projectTitle}
+                                  onChange={(e) =>
+                                    setEditingOrderInvoiceDraft({
+                                      ...editingOrderInvoiceDraft,
+                                      projectTitle: e.target.value,
+                                    })
+                                  }
+                                  className="w-full px-2.5 py-1.5 text-xs font-semibold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
+                                />
+                              </div>
 
-                          <div>
-                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                              Quantity (Frames)
-                            </label>
-                            <input
-                              type="number"
-                              min={1}
-                              value={ord.imageCount}
-                              onChange={(e) => {
-                                if (onUpdateOrderInvoiceDetails) {
-                                  onUpdateOrderInvoiceDetails(ord.id, {
-                                    imageCount: Number(e.target.value),
-                                  });
-                                }
-                              }}
-                              className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                            />
-                          </div>
+                              <div>
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                  Quantity (Frames)
+                                </label>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={editingOrderInvoiceDraft.imageCount}
+                                  onChange={(e) =>
+                                    setEditingOrderInvoiceDraft({
+                                      ...editingOrderInvoiceDraft,
+                                      imageCount: Number(e.target.value),
+                                    })
+                                  }
+                                  className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                                />
+                              </div>
 
-                          <div>
-                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                              Invoice Total Amount ($ USD)
-                            </label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min={0}
-                              value={ord.totalPrice}
-                              onChange={(e) => {
-                                if (onUpdateOrderInvoiceDetails) {
-                                  onUpdateOrderInvoiceDetails(ord.id, {
-                                    totalPrice: Number(e.target.value),
-                                  });
-                                }
-                              }}
-                              className="w-full px-2.5 py-1.5 text-xs font-mono-tabular font-bold text-[#0088FF] bg-white border border-slate-300 rounded-lg"
-                            />
-                          </div>
-                        </div>
+                              <div>
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                  Invoice Total Amount ($ USD)
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min={0}
+                                  value={editingOrderInvoiceDraft.totalPrice}
+                                  onChange={(e) =>
+                                    setEditingOrderInvoiceDraft({
+                                      ...editingOrderInvoiceDraft,
+                                      totalPrice: Number(e.target.value),
+                                    })
+                                  }
+                                  className="w-full px-2.5 py-1.5 text-xs font-mono-tabular font-bold text-[#0088FF] bg-white border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                            </div>
 
-                        {/* Row 2: Customer BILL TO Fields (Only non-empty fields are shown on Invoice) */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5 pt-2 border-t border-slate-200">
-                          <div>
-                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
-                              BILL TO · Company Name
-                            </label>
-                            <input
-                              type="text"
-                              value={ord.companyName || ''}
-                              onChange={(e) => {
-                                if (onUpdateOrderInvoiceDetails) {
-                                  onUpdateOrderInvoiceDetails(ord.id, {
-                                    companyName: e.target.value,
-                                  });
+                            {/* Customer BILL TO Fields */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5 pt-2 border-t border-slate-200">
+                              <div>
+                                <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                                  BILL TO · Company Name
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editingOrderInvoiceDraft.companyName}
+                                  onChange={(e) =>
+                                    setEditingOrderInvoiceDraft({
+                                      ...editingOrderInvoiceDraft,
+                                      companyName: e.target.value,
+                                    })
+                                  }
+                                  placeholder="(Blank = hidden)"
+                                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                                  BILL TO · Contact Person
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editingOrderInvoiceDraft.clientName}
+                                  onChange={(e) =>
+                                    setEditingOrderInvoiceDraft({
+                                      ...editingOrderInvoiceDraft,
+                                      clientName: e.target.value,
+                                    })
+                                  }
+                                  placeholder="(Blank = hidden)"
+                                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                                  BILL TO · Address
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editingOrderInvoiceDraft.clientAddress}
+                                  onChange={(e) =>
+                                    setEditingOrderInvoiceDraft({
+                                      ...editingOrderInvoiceDraft,
+                                      clientAddress: e.target.value,
+                                    })
+                                  }
+                                  placeholder="(Blank = hidden)"
+                                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                                  BILL TO · Phone No.
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editingOrderInvoiceDraft.clientPhone}
+                                  onChange={(e) =>
+                                    setEditingOrderInvoiceDraft({
+                                      ...editingOrderInvoiceDraft,
+                                      clientPhone: e.target.value,
+                                    })
+                                  }
+                                  placeholder="(Blank = hidden)"
+                                  className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                                  BILL TO · Website
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editingOrderInvoiceDraft.clientWebsite}
+                                  onChange={(e) =>
+                                    setEditingOrderInvoiceDraft({
+                                      ...editingOrderInvoiceDraft,
+                                      clientWebsite: e.target.value,
+                                    })
+                                  }
+                                  placeholder="(Blank = hidden)"
+                                  className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                                  BILL TO · Email
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editingOrderInvoiceDraft.clientEmail}
+                                  onChange={(e) =>
+                                    setEditingOrderInvoiceDraft({
+                                      ...editingOrderInvoiceDraft,
+                                      clientEmail: e.target.value,
+                                    })
+                                  }
+                                  placeholder="(Blank = hidden)"
+                                  className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2 pt-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditingOrderInvoiceDraft(null)
                                 }
-                              }}
-                              placeholder="(Blank = hidden)"
-                              className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
-                            />
+                                className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (onUpdateOrderInvoiceDetails) {
+                                    await onUpdateOrderInvoiceDetails(ord.id, {
+                                      paymentTerms:
+                                        editingOrderInvoiceDraft.paymentTerms,
+                                      paymentOption:
+                                        editingOrderInvoiceDraft.paymentOption,
+                                      projectTitle:
+                                        editingOrderInvoiceDraft.projectTitle,
+                                      imageCount:
+                                        editingOrderInvoiceDraft.imageCount,
+                                      totalPrice:
+                                        editingOrderInvoiceDraft.totalPrice,
+                                      companyName:
+                                        editingOrderInvoiceDraft.companyName,
+                                      clientName:
+                                        editingOrderInvoiceDraft.clientName,
+                                      clientAddress:
+                                        editingOrderInvoiceDraft.clientAddress,
+                                      clientPhone:
+                                        editingOrderInvoiceDraft.clientPhone,
+                                      clientWebsite:
+                                        editingOrderInvoiceDraft.clientWebsite,
+                                      clientEmail:
+                                        editingOrderInvoiceDraft.clientEmail,
+                                    });
+                                  }
+                                  setEditingOrderInvoiceDraft(null);
+                                  notifySaved(
+                                    `Saved & updated invoice ${invRef} details!`
+                                  );
+                                }}
+                                className="px-5 py-2 rounded-lg bg-[#001E5A] hover:bg-[#0088FF] text-white text-xs font-bold transition-colors flex items-center gap-1.5"
+                              >
+                                <CheckCircle2 className="w-4 h-4" />
+                                <span>Save & Update Invoice</span>
+                              </button>
+                            </div>
                           </div>
-                          <div>
-                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
-                              BILL TO · Contact Person
-                            </label>
-                            <input
-                              type="text"
-                              value={ord.clientName || ''}
-                              onChange={(e) => {
-                                if (onUpdateOrderInvoiceDetails) {
-                                  onUpdateOrderInvoiceDetails(ord.id, {
-                                    clientName: e.target.value,
-                                  });
-                                }
-                              }}
-                              placeholder="(Blank = hidden)"
-                              className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
-                              BILL TO · Address
-                            </label>
-                            <input
-                              type="text"
-                              value={ord.clientAddress || ''}
-                              onChange={(e) => {
-                                if (onUpdateOrderInvoiceDetails) {
-                                  onUpdateOrderInvoiceDetails(ord.id, {
-                                    clientAddress: e.target.value,
-                                  });
-                                }
-                              }}
-                              placeholder="(Blank = hidden)"
-                              className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
-                              BILL TO · Phone No.
-                            </label>
-                            <input
-                              type="text"
-                              value={ord.clientPhone || ''}
-                              onChange={(e) => {
-                                if (onUpdateOrderInvoiceDetails) {
-                                  onUpdateOrderInvoiceDetails(ord.id, {
-                                    clientPhone: e.target.value,
-                                  });
-                                }
-                              }}
-                              placeholder="(Blank = hidden)"
-                              className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
-                              BILL TO · Website
-                            </label>
-                            <input
-                              type="text"
-                              value={ord.clientWebsite || ''}
-                              onChange={(e) => {
-                                if (onUpdateOrderInvoiceDetails) {
-                                  onUpdateOrderInvoiceDetails(ord.id, {
-                                    clientWebsite: e.target.value,
-                                  });
-                                }
-                              }}
-                              placeholder="(Blank = hidden)"
-                              className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
-                              BILL TO · Email
-                            </label>
-                            <input
-                              type="text"
-                              value={ord.clientEmail || ''}
-                              onChange={(e) => {
-                                if (onUpdateOrderInvoiceDetails) {
-                                  onUpdateOrderInvoiceDetails(ord.id, {
-                                    clientEmail: e.target.value,
-                                  });
-                                }
-                              }}
-                              placeholder="(Blank = hidden)"
-                              className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                            />
-                          </div>
-                        </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
               </div>
 
-              {/* SECTION B: BILL FROM, PAYMENT TERMS / OPTION, PAYPAL & BANK DETAILS EDITOR */}
+              {/* SECTION B: BILL FROM, PAYMENT TERMS / OPTION, PAYPAL & BANK DETAILS (READ-ONLY SUMMARY BY DEFAULT, EDIT ON CLICK) */}
               <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
                   <div>
                     <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
                       OFFICIAL INVOICE BILL FROM & PAYMENT REMITTANCE SETUP
@@ -3294,376 +3491,517 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                       Configure BILL FROM, Default Payment Terms (Monthly / Project), PayPal & Bank Details
                     </h2>
                   </div>
-                  <FileText className="w-5 h-5 text-[#0088FF]" />
+
+                  {!isEditingInvoiceSettings ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInvoiceSettingsDraft({ ...invoicePaymentInfo });
+                        setIsEditingInvoiceSettings(true);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-[#001E5A] hover:bg-[#0088FF] text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-xs"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      <span>Edit Payment & BILL FROM Settings</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingInvoiceSettings(false)}
+                      className="px-3.5 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold transition-colors flex items-center gap-1.5"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>Cancel Edit</span>
+                    </button>
+                  )}
                 </div>
 
-                {/* Row 1: BILL FROM Details */}
-                <div className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-3">
-                  <p className="text-xs font-bold text-[#001E5A] uppercase font-mono-tabular">
-                    1. BILL FROM (Studio Sender Information)
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                        Company Name
-                      </label>
-                      <input
-                        type="text"
-                        value={invoicePaymentInfo.companyName || 'Fix Photo Studio.'}
-                        onChange={(e) =>
-                          onUpdateInvoicePaymentInfo({
-                            ...invoicePaymentInfo,
-                            companyName: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 text-xs font-bold bg-white border border-slate-300 rounded-lg"
-                      />
+                {!isEditingInvoiceSettings ? (
+                  /* Clean Read-Only Summary View */
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                    <div className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-1.5">
+                      <p className="font-mono-tabular font-bold text-[#0088FF] text-[11px]">
+                        1. BILL FROM (STUDIO SENDER)
+                      </p>
+                      <p className="font-bold text-[#001E5A] text-sm">
+                        {invoicePaymentInfo.companyName || 'Fix Photo Studio.'}
+                      </p>
+                      <p className="text-slate-700">
+                        <strong>Contact Person:</strong>{' '}
+                        {invoicePaymentInfo.contactPerson ||
+                          'Eng. Md Forhad Hossen.'}
+                      </p>
+                      <p className="text-slate-600">
+                        <strong>Address:</strong>{' '}
+                        {invoicePaymentInfo.companyAddress ||
+                          'House 5, Road 5, Block A, Mirpur 1, Dhaka, 1216.'}
+                      </p>
+                      <p className="text-slate-600">
+                        <strong>Country:</strong>{' '}
+                        {invoicePaymentInfo.companyCountry || 'Bangladesh.'} ·{' '}
+                        <strong>Phone:</strong>{' '}
+                        {invoicePaymentInfo.companyPhone || '+8801911862115'}
+                      </p>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                        Contact Person
-                      </label>
-                      <input
-                        type="text"
-                        value={
-                          invoicePaymentInfo.contactPerson ||
-                          'Eng. Md Forhad Hossen.'
-                        }
-                        onChange={(e) =>
-                          onUpdateInvoicePaymentInfo({
-                            ...invoicePaymentInfo,
-                            contactPerson: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                      />
+
+                    <div className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-1.5">
+                      <p className="font-mono-tabular font-bold text-[#0088FF] text-[11px]">
+                        2. PAYMENT TERMS & PAYPAL
+                      </p>
+                      <p className="text-slate-700">
+                        <strong>Default Payment Terms:</strong>{' '}
+                        <span className="font-bold text-[#001E5A]">
+                          {invoicePaymentInfo.defaultPaymentTerms || 'Project'}
+                        </span>
+                      </p>
+                      <p className="text-slate-700">
+                        <strong>Default Payment Option:</strong>{' '}
+                        <span className="font-bold text-[#0088FF]">
+                          {invoicePaymentInfo.defaultPaymentOption || 'PayPal'}
+                        </span>
+                      </p>
+                      <p className="text-slate-700 font-mono-tabular">
+                        <strong>PayPal Mail ID:</strong>{' '}
+                        {invoicePaymentInfo.paypalEmail ||
+                          'hello@clippasia.com'}
+                      </p>
+                      <p className="text-slate-600 font-mono-tabular">
+                        <strong>Tax / VAT:</strong>{' '}
+                        {invoicePaymentInfo.taxRatePercent ?? 0}%
+                      </p>
                     </div>
-                    <div className="lg:col-span-2">
-                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                        Address
-                      </label>
-                      <input
-                        type="text"
-                        value={
-                          invoicePaymentInfo.companyAddress ||
-                          'House 5, Road 5, Block A, Mirpur 1, Dhaka, 1216.'
-                        }
-                        onChange={(e) =>
-                          onUpdateInvoicePaymentInfo({
-                            ...invoicePaymentInfo,
-                            companyAddress: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                      />
+
+                    <div className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-1">
+                      <p className="font-mono-tabular font-bold text-[#0088FF] text-[11px]">
+                        3. BANK DETAILS (DUTCH BANGLA BANK PLC)
+                      </p>
+                      <p className="text-slate-700">
+                        <strong>Bank Name:</strong>{' '}
+                        {invoicePaymentInfo.bankName}
+                      </p>
+                      <p className="text-slate-700">
+                        <strong>Account Name:</strong>{' '}
+                        {invoicePaymentInfo.accountHolderName}
+                      </p>
+                      <p className="text-slate-700 font-mono-tabular">
+                        <strong>Account No:</strong>{' '}
+                        {invoicePaymentInfo.accountNumberOrIban}
+                      </p>
+                      <p className="text-slate-600">
+                        <strong>Branch:</strong>{' '}
+                        {invoicePaymentInfo.bankBranch ||
+                          'Mirpur 11, Pallabi Branch, Dhaka, Bangladesh.'}
+                      </p>
+                      <p className="text-slate-600 font-mono-tabular">
+                        Code: {invoicePaymentInfo.branchCode || '211'} · SWIFT:{' '}
+                        {invoicePaymentInfo.swiftCode || 'DBBLBDDH'} · Routing:{' '}
+                        {invoicePaymentInfo.routingNumber || '090263581'}
+                      </p>
                     </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                        Country & Phone
-                      </label>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <input
-                          type="text"
-                          value={invoicePaymentInfo.companyCountry || 'Bangladesh.'}
+                  </div>
+                ) : (
+                  /* Editable Form (Only shown when Edit button is clicked) */
+                  <div className="space-y-5 pt-2">
+                    {/* Row 1: BILL FROM Details */}
+                    <div className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-3">
+                      <p className="text-xs font-bold text-[#001E5A] uppercase font-mono-tabular">
+                        1. BILL FROM (Studio Sender Information)
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                            Company Name
+                          </label>
+                          <input
+                            type="text"
+                            value={
+                              invoiceSettingsDraft.companyName ||
+                              'Fix Photo Studio.'
+                            }
+                            onChange={(e) =>
+                              setInvoiceSettingsDraft({
+                                ...invoiceSettingsDraft,
+                                companyName: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 text-xs font-bold bg-white border border-slate-300 rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                            Contact Person
+                          </label>
+                          <input
+                            type="text"
+                            value={
+                              invoiceSettingsDraft.contactPerson ||
+                              'Eng. Md Forhad Hossen.'
+                            }
+                            onChange={(e) =>
+                              setInvoiceSettingsDraft({
+                                ...invoiceSettingsDraft,
+                                contactPerson: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                          />
+                        </div>
+                        <div className="lg:col-span-2">
+                          <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                            Address
+                          </label>
+                          <input
+                            type="text"
+                            value={
+                              invoiceSettingsDraft.companyAddress ||
+                              'House 5, Road 5, Block A, Mirpur 1, Dhaka, 1216.'
+                            }
+                            onChange={(e) =>
+                              setInvoiceSettingsDraft({
+                                ...invoiceSettingsDraft,
+                                companyAddress: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                            Country & Phone
+                          </label>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <input
+                              type="text"
+                              value={
+                                invoiceSettingsDraft.companyCountry ||
+                                'Bangladesh.'
+                              }
+                              onChange={(e) =>
+                                setInvoiceSettingsDraft({
+                                  ...invoiceSettingsDraft,
+                                  companyCountry: e.target.value,
+                                })
+                              }
+                              placeholder="Country"
+                              className="w-full px-2.5 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                            />
+                            <input
+                              type="text"
+                              value={
+                                invoiceSettingsDraft.companyPhone ||
+                                '+8801911862115'
+                              }
+                              onChange={(e) =>
+                                setInvoiceSettingsDraft({
+                                  ...invoiceSettingsDraft,
+                                  companyPhone: e.target.value,
+                                })
+                              }
+                              placeholder="Phone"
+                              className="w-full px-2.5 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Row 2: Default Payment Terms, Default Payment Option & PayPal Account */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Default Payment Terms
+                        </label>
+                        <select
+                          value={
+                            invoiceSettingsDraft.defaultPaymentTerms ||
+                            'Project'
+                          }
                           onChange={(e) =>
-                            onUpdateInvoicePaymentInfo({
-                              ...invoicePaymentInfo,
-                              companyCountry: e.target.value,
+                            setInvoiceSettingsDraft({
+                              ...invoiceSettingsDraft,
+                              defaultPaymentTerms: e.target
+                                .value as InvoicePaymentTerms,
                             })
                           }
-                          placeholder="Country"
-                          className="w-full px-2.5 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                          className="w-full px-3 py-2 text-xs font-bold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
+                        >
+                          <option value="Project">Project</option>
+                          <option value="Monthly">Monthly</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Default Payment Option
+                        </label>
+                        <select
+                          value={
+                            invoiceSettingsDraft.defaultPaymentOption ||
+                            'PayPal'
+                          }
+                          onChange={(e) =>
+                            setInvoiceSettingsDraft({
+                              ...invoiceSettingsDraft,
+                              defaultPaymentOption: e.target
+                                .value as InvoicePaymentOption,
+                            })
+                          }
+                          className="w-full px-3 py-2 text-xs font-bold text-[#0088FF] bg-white border border-slate-300 rounded-lg"
+                        >
+                          <option value="PayPal">PayPal</option>
+                          <option value="Bank">Bank</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          PayPal Mail ID (Shown when PayPal selected)
+                        </label>
+                        <input
+                          type="text"
+                          value={
+                            invoiceSettingsDraft.paypalEmail ||
+                            'hello@clippasia.com'
+                          }
+                          onChange={(e) =>
+                            setInvoiceSettingsDraft({
+                              ...invoiceSettingsDraft,
+                              paypalEmail: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 text-xs font-mono-tabular font-bold text-[#0088FF] border border-slate-300 rounded-lg"
                         />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Tax / VAT Percentage (%)
+                        </label>
                         <input
-                          type="text"
-                          value={invoicePaymentInfo.companyPhone || '+8801911862115'}
+                          type="number"
+                          step="0.1"
+                          min={0}
+                          max={100}
+                          value={invoiceSettingsDraft.taxRatePercent ?? 0}
                           onChange={(e) =>
-                            onUpdateInvoicePaymentInfo({
-                              ...invoicePaymentInfo,
-                              companyPhone: e.target.value,
+                            setInvoiceSettingsDraft({
+                              ...invoiceSettingsDraft,
+                              taxRatePercent: Number(e.target.value),
                             })
                           }
-                          placeholder="Phone"
-                          className="w-full px-2.5 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                          className="w-full px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg"
                         />
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                {/* Row 2: Default Payment Terms, Default Payment Option & PayPal Account */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Default Payment Terms
-                    </label>
-                    <select
-                      value={invoicePaymentInfo.defaultPaymentTerms || 'Project'}
-                      onChange={(e) =>
-                        onUpdateInvoicePaymentInfo({
-                          ...invoicePaymentInfo,
-                          defaultPaymentTerms: e.target
-                            .value as InvoicePaymentTerms,
-                        })
-                      }
-                      className="w-full px-3 py-2 text-xs font-bold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
-                    >
-                      <option value="Project">Project</option>
-                      <option value="Monthly">Monthly</option>
-                    </select>
-                  </div>
+                    {/* Row 3: Bank Details Below */}
+                    <div className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-3">
+                      <p className="text-xs font-bold text-[#001E5A] uppercase font-mono-tabular">
+                        2. Bank Details (Shown on Invoice when Payment Option = Bank)
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                            Bank Name
+                          </label>
+                          <input
+                            type="text"
+                            value={invoiceSettingsDraft.bankName}
+                            onChange={(e) =>
+                              setInvoiceSettingsDraft({
+                                ...invoiceSettingsDraft,
+                                bankName: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                            Account Name
+                          </label>
+                          <input
+                            type="text"
+                            value={invoiceSettingsDraft.accountHolderName}
+                            onChange={(e) =>
+                              setInvoiceSettingsDraft({
+                                ...invoiceSettingsDraft,
+                                accountHolderName: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                            Account No
+                          </label>
+                          <input
+                            type="text"
+                            value={invoiceSettingsDraft.accountNumberOrIban}
+                            onChange={(e) =>
+                              setInvoiceSettingsDraft({
+                                ...invoiceSettingsDraft,
+                                accountNumberOrIban: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                            Branch
+                          </label>
+                          <input
+                            type="text"
+                            value={
+                              invoiceSettingsDraft.bankBranch ||
+                              'Mirpur 11, Pallabi Branch, Dhaka, Bangladesh.'
+                            }
+                            onChange={(e) =>
+                              setInvoiceSettingsDraft({
+                                ...invoiceSettingsDraft,
+                                bankBranch: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                            Branch Code
+                          </label>
+                          <input
+                            type="text"
+                            value={invoiceSettingsDraft.branchCode || '211'}
+                            onChange={(e) =>
+                              setInvoiceSettingsDraft({
+                                ...invoiceSettingsDraft,
+                                branchCode: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                            SWIFT Code
+                          </label>
+                          <input
+                            type="text"
+                            value={
+                              invoiceSettingsDraft.swiftCode || 'DBBLBDDH'
+                            }
+                            onChange={(e) =>
+                              setInvoiceSettingsDraft({
+                                ...invoiceSettingsDraft,
+                                swiftCode: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                            Routing No
+                          </label>
+                          <input
+                            type="text"
+                            value={
+                              invoiceSettingsDraft.routingNumber || '090263581'
+                            }
+                            onChange={(e) =>
+                              setInvoiceSettingsDraft({
+                                ...invoiceSettingsDraft,
+                                routingNumber: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                            Billing Support Email
+                          </label>
+                          <input
+                            type="text"
+                            value={invoiceSettingsDraft.billingSupportEmail}
+                            onChange={(e) =>
+                              setInvoiceSettingsDraft({
+                                ...invoiceSettingsDraft,
+                                billingSupportEmail: e.target.value,
+                              })
+                            }
+                            className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                          />
+                        </div>
+                      </div>
+                    </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Default Payment Option
-                    </label>
-                    <select
-                      value={invoicePaymentInfo.defaultPaymentOption || 'PayPal'}
-                      onChange={(e) =>
-                        onUpdateInvoicePaymentInfo({
-                          ...invoicePaymentInfo,
-                          defaultPaymentOption: e.target
-                            .value as InvoicePaymentOption,
-                        })
-                      }
-                      className="w-full px-3 py-2 text-xs font-bold text-[#0088FF] bg-white border border-slate-300 rounded-lg"
-                    >
-                      <option value="PayPal">PayPal</option>
-                      <option value="Bank">Bank</option>
-                    </select>
-                  </div>
+                    {/* Row 4: Payment Instructions Note & Footer Terms */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Invoice Payment Instructions Note (INV-FPS-2026-XXXX auto-replaces with Invoice No.)
+                        </label>
+                        <input
+                          type="text"
+                          value={invoiceSettingsDraft.paymentInstructions}
+                          onChange={(e) =>
+                            setInvoiceSettingsDraft({
+                              ...invoiceSettingsDraft,
+                              paymentInstructions: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Invoice Terms & Warranty Footer Note
+                        </label>
+                        <input
+                          type="text"
+                          value={
+                            invoiceSettingsDraft.invoiceNotesAndTerms ||
+                            'Official Commercial Invoice issued by FixPhoto Studio.'
+                          }
+                          onChange={(e) =>
+                            setInvoiceSettingsDraft({
+                              ...invoiceSettingsDraft,
+                              invoiceNotesAndTerms: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                    </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      PayPal Mail ID (Shown when PayPal selected)
-                    </label>
-                    <input
-                      type="text"
-                      value={invoicePaymentInfo.paypalEmail || 'hello@clippasia.com'}
-                      onChange={(e) =>
-                        onUpdateInvoicePaymentInfo({
-                          ...invoicePaymentInfo,
-                          paypalEmail: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 text-xs font-mono-tabular font-bold text-[#0088FF] border border-slate-300 rounded-lg"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Tax / VAT Percentage (%)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min={0}
-                      max={100}
-                      value={invoicePaymentInfo.taxRatePercent ?? 0}
-                      onChange={(e) =>
-                        onUpdateInvoicePaymentInfo({
-                          ...invoicePaymentInfo,
-                          taxRatePercent: Number(e.target.value),
-                        })
-                      }
-                      className="w-full px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                </div>
-
-                {/* Row 3: Bank Details Below (Shown when Bank is selected) */}
-                <div className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-3">
-                  <p className="text-xs font-bold text-[#001E5A] uppercase font-mono-tabular">
-                    2. Bank Details (Shown on Invoice when Payment Option = Bank)
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-                    <div>
-                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                        Bank Name
-                      </label>
-                      <input
-                        type="text"
-                        value={invoicePaymentInfo.bankName}
-                        onChange={(e) =>
-                          onUpdateInvoicePaymentInfo({
-                            ...invoicePaymentInfo,
-                            bankName: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                        Account Name
-                      </label>
-                      <input
-                        type="text"
-                        value={invoicePaymentInfo.accountHolderName}
-                        onChange={(e) =>
-                          onUpdateInvoicePaymentInfo({
-                            ...invoicePaymentInfo,
-                            accountHolderName: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                        Account No
-                      </label>
-                      <input
-                        type="text"
-                        value={invoicePaymentInfo.accountNumberOrIban}
-                        onChange={(e) =>
-                          onUpdateInvoicePaymentInfo({
-                            ...invoicePaymentInfo,
-                            accountNumberOrIban: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                        Branch
-                      </label>
-                      <input
-                        type="text"
-                        value={
-                          invoicePaymentInfo.bankBranch ||
-                          'Mirpur 11, Pallabi Branch, Dhaka, Bangladesh.'
-                        }
-                        onChange={(e) =>
-                          onUpdateInvoicePaymentInfo({
-                            ...invoicePaymentInfo,
-                            bankBranch: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                        Branch Code
-                      </label>
-                      <input
-                        type="text"
-                        value={invoicePaymentInfo.branchCode || '211'}
-                        onChange={(e) =>
-                          onUpdateInvoicePaymentInfo({
-                            ...invoicePaymentInfo,
-                            branchCode: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                        SWIFT Code
-                      </label>
-                      <input
-                        type="text"
-                        value={invoicePaymentInfo.swiftCode || 'DBBLBDDH'}
-                        onChange={(e) =>
-                          onUpdateInvoicePaymentInfo({
-                            ...invoicePaymentInfo,
-                            swiftCode: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                        Routing No
-                      </label>
-                      <input
-                        type="text"
-                        value={invoicePaymentInfo.routingNumber || '090263581'}
-                        onChange={(e) =>
-                          onUpdateInvoicePaymentInfo({
-                            ...invoicePaymentInfo,
-                            routingNumber: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                        Billing Support Email
-                      </label>
-                      <input
-                        type="text"
-                        value={invoicePaymentInfo.billingSupportEmail}
-                        onChange={(e) =>
-                          onUpdateInvoicePaymentInfo({
-                            ...invoicePaymentInfo,
-                            billingSupportEmail: e.target.value,
-                          })
-                        }
-                        className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                      />
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingInvoiceSettings(false)}
+                        className="px-4 py-2.5 text-xs font-semibold text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-100"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onUpdateInvoicePaymentInfo(invoiceSettingsDraft);
+                          setIsEditingInvoiceSettings(false);
+                          notifySaved(
+                            'Saved & published Invoice BILL FROM, Payment Terms, PayPal & Bank Details!'
+                          );
+                        }}
+                        className="px-5 py-2.5 text-xs font-bold text-white bg-[#001E5A] hover:bg-[#0088FF] rounded-lg transition-colors flex items-center gap-2"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Save & Update Invoice Settings</span>
+                      </button>
                     </div>
                   </div>
-                </div>
-
-                {/* Row 4: Payment Instructions Note & Footer Terms */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Invoice Payment Instructions Note (INV-FPS-2026-XXXX auto-replaces with Invoice No.)
-                    </label>
-                    <input
-                      type="text"
-                      value={invoicePaymentInfo.paymentInstructions}
-                      onChange={(e) =>
-                        onUpdateInvoicePaymentInfo({
-                          ...invoicePaymentInfo,
-                          paymentInstructions: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Invoice Terms & Warranty Footer Note
-                    </label>
-                    <input
-                      type="text"
-                      value={
-                        invoicePaymentInfo.invoiceNotesAndTerms ||
-                        'Official Commercial Invoice issued by FixPhoto Studio.'
-                      }
-                      onChange={(e) =>
-                        onUpdateInvoicePaymentInfo({
-                          ...invoicePaymentInfo,
-                          invoiceNotesAndTerms: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      notifySaved(
-                        'Saved Invoice BILL FROM, Payment Terms, PayPal & Bank Details!'
-                      )
-                    }
-                    className="px-5 py-2.5 text-xs font-bold text-white bg-[#001E5A] hover:bg-[#0088FF] rounded-lg transition-colors flex items-center gap-2"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Save Invoice Settings & Payment Info</span>
-                  </button>
-                </div>
+                )}
               </div>
             </div>
           )}
@@ -3906,305 +4244,650 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
              =================================================================== */}
           {activeTab === 'menu_and_services' && (
             <div className="space-y-8">
-              {/* 1.Individual Service Page Editor (Hero, Split Sections, Complexity Tiers, Samples & FAQs) */}
-              {activeEditService && (
-                <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-6">
-                  <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
-                    <div>
-                      <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
-                        SINGLE SERVICE PAGE A-TO-Z EDITOR (
-                        {activeEditService.indexNumber}{' '}
-                        {activeEditService.shortNavTitle.toUpperCase()})
-                      </p>
-                      <h3 className="text-lg font-bold text-[#001E5A]">
-                        Select Any Service Page to Edit Content, Split Image+Text Sections, Pricing & Samples
-                      </h3>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <select
-                        value={editingServiceSlug}
-                        onChange={(e) => setEditingServiceSlug(e.target.value)}
-                        className="px-3.5 py-2 text-xs font-bold text-[#001E5A] bg-[#EAF3FC] border border-[#B8D0EB] rounded-lg"
-                      >
-                        {servicesList.map((s) => (
-                          <option key={s.slug} value={s.slug}>
-                            {s.indexNumber} {s.shortNavTitle} ($
-                            {s.ratePerImage.toFixed(2)})
-                          </option>
-                        ))}
-                      </select>
-
-                      {onPreviewServicePage && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onPreviewServicePage(activeEditService.slug)
-                          }
-                          className="px-3.5 py-2 text-xs font-semibold text-white bg-[#0088FF] hover:bg-[#001E5A] rounded-lg transition-colors flex items-center gap-1.5"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Preview This Service Page Live</span>
-                        </button>
-                      )}
-
-                      {servicesList.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const remaining = servicesList.filter(
-                              (s) => s.slug !== activeEditService.slug
-                            );
-                            onUpdateServicesList(remaining);
-                            setEditingServiceSlug(remaining[0].slug);
-                            notifySaved(
-                              `Removed service page "${activeEditService.shortNavTitle}".`
-                            );
-                          }}
-                          className="p-2 text-slate-400 hover:text-red-600 border border-slate-200 rounded-lg"
-                          title="Delete This Service Page"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="md:col-span-2">
-                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                        Service Page Full Headline
-                      </label>
-                      <input
-                        type="text"
-                        value={activeEditService.title}
-                        onChange={(e) => {
-                          const next = servicesList.map((s) =>
-                            s.slug === activeEditService.slug
-                              ? { ...s, title: e.target.value }
-                              : s
-                          );
-                          onUpdateServicesList(next);
-                        }}
-                        className="w-full px-3 py-2 text-xs font-bold border border-slate-300 rounded-lg"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                        Short Menu Title
-                      </label>
-                      <input
-                        type="text"
-                        value={activeEditService.shortNavTitle}
-                        onChange={(e) => {
-                          const next = servicesList.map((s) =>
-                            s.slug === activeEditService.slug
-                              ? { ...s, shortNavTitle: e.target.value }
-                              : s
-                          );
-                          onUpdateServicesList(next);
-                        }}
-                        className="w-full px-3 py-2 text-xs font-semibold border border-slate-300 rounded-lg"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                        Starting Rate ($ USD)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.05"
-                        value={activeEditService.ratePerImage}
-                        onChange={(e) => {
-                          const next = servicesList.map((s) =>
-                            s.slug === activeEditService.slug
-                              ? {
-                                  ...s,
-                                  ratePerImage: Math.max(
-                                    0.05,
-                                    Number(e.target.value)
-                                  ),
-                                }
-                              : s
-                          );
-                          onUpdateServicesList(next);
-                        }}
-                        className="w-full px-3 py-2 text-xs font-mono-tabular font-bold border border-slate-300 rounded-lg"
-                      />
-                    </div>
-                  </div>
-
+              {/* 1. PUBLISHED SERVICE PAGES DIRECTORY LIST + "+ ADD NEW SERVICE PAGE" BUTTON */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5 shadow-xs">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
                   <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Service Hero Subtitle
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={activeEditService.heroSubtitle}
-                      onChange={(e) => {
-                        const next = servicesList.map((s) =>
-                          s.slug === activeEditService.slug
-                            ? { ...s, heroSubtitle: e.target.value }
-                            : s
-                        );
-                        onUpdateServicesList(next);
-                      }}
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
+                    <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
+                      PUBLISHED WEBSITE SERVICE PAGES ({servicesList.length} ACTIVE)
+                    </p>
+                    <h2 className="text-lg font-bold text-[#001E5A]">
+                      All Service Pages List — Click Edit Icon to Modify Page Content, Split Sections, Pricing &amp; SEO
+                    </h2>
                   </div>
 
-                  {/* On-Page SEO Title & Meta Description for this Service Page */}
-                  <div className="p-4 rounded-xl bg-[#EAF3FC]/70 border border-[#B8D0EB] space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-mono-tabular font-bold text-[#0088FF]">
-                        ON-PAGE SEO SETTINGS FOR {activeEditService.shortNavTitle.toUpperCase()}
-                      </span>
-                      <span className="text-[11px] font-mono-tabular text-emerald-700 font-semibold">
-                        Live &lt;title&gt;, &lt;meta description&gt; &amp; Schema.org
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAddNewServiceForm((prev) => !prev);
+                      setIsServiceEditorOpen(false);
+                      setEditingServiceDraft(null);
+                    }}
+                    className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 shadow-xs ${
+                      showAddNewServiceForm
+                        ? 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                        : 'bg-[#001E5A] hover:bg-[#0088FF] text-white'
+                    }`}
+                  >
+                    {showAddNewServiceForm ? (
+                      <>
+                        <X className="w-4 h-4" />
+                        <span>Close Add New Form</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        <span>+ Add New Service Page</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Collapsible "+ Add New Service Page" Form */}
+                {showAddNewServiceForm && (
+                  <form
+                    onSubmit={handleCreateCustomServicePage}
+                    className="p-6 rounded-2xl bg-[#F0F7FF] border border-[#0088FF] space-y-5"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-200 pb-3">
                       <div>
-                        <label className="block text-[11px] font-semibold text-[#001E5A] mb-1">
+                        <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
+                          + CREATE NEW SERVICE PAGE
+                        </p>
+                        <h3 className="text-base font-bold text-[#001E5A]">
+                          Add a New Photo Editing or Video Editing Service Page
+                        </h3>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddNewServiceForm(false)}
+                        className="px-3 py-1 rounded-lg bg-white border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Service Division
+                        </label>
+                        <select
+                          value={newSrvDivision}
+                          onChange={(e) =>
+                            setNewSrvDivision(e.target.value as StudioDivision)
+                          }
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg font-semibold"
+                        >
+                          <option value="photo_editing">
+                            01. Photo Editing Division
+                          </option>
+                          <option value="video_editing">
+                            02. Video Editing Division
+                          </option>
+                        </select>
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          New Service Page Title *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={newSrvName}
+                          onChange={(e) => setNewSrvName(e.target.value)}
+                          placeholder="e.g., Automotive Photo Retouching & Shadow"
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Starting Rate ($ USD)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.05"
+                          min="0.10"
+                          value={newSrvRate}
+                          onChange={(e) => setNewSrvRate(e.target.value)}
+                          className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Turnaround SLA Badge
+                        </label>
+                        <input
+                          type="text"
+                          value={newSrvTurnaround}
+                          onChange={(e) => setNewSrvTurnaround(e.target.value)}
+                          className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Deliverables Specification
+                        </label>
+                        <input
+                          type="text"
+                          value={newSrvDeliverables}
+                          onChange={(e) =>
+                            setNewSrvDeliverables(e.target.value)
+                          }
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Default Interactive Canvas Preset
+                        </label>
+                        <select
+                          value={newSrvArtwork}
+                          onChange={(e) =>
+                            setNewSrvArtwork(
+                              e.target.value as ServiceDefinition['artworkType']
+                            )
+                          }
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                        >
+                          <option value="watch">
+                            Luxury Watch / Clipping Path
+                          </option>
+                          <option value="real_estate">
+                            Real Estate HDR & Staging
+                          </option>
+                          <option value="jewelry">Macro Fine Jewelry</option>
+                          <option value="mannequin">3D Ghost Mannequin</option>
+                          <option value="footwear">
+                            E-Commerce Footwear & Shadow
+                          </option>
+                          <option value="beauty">
+                            Beauty & Portrait Retouching
+                          </option>
+                          <option value="variant">
+                            Multi-Color & Video Grade
+                          </option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <RichTextEditor
+                      label="Hero Subtitle & Page Overview Content (Rich Text Editor: Font, Size, Links, Bold, Lists)"
+                      value={newSrvSubtitle}
+                      onChange={setNewSrvSubtitle}
+                      minHeight="140px"
+                      placeholder="Describe the workflow, QA precision, and commercial deliverables with full rich text formatting..."
+                    />
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
                           SEO Meta Title (&lt;title&gt;)
                         </label>
                         <input
                           type="text"
-                          value={
-                            activeEditService.seoTitle ??
-                            `${activeEditService.shortNavTitle} ($${activeEditService.ratePerImage.toFixed(
-                              2
-                            )}/${activeEditService.unitLabel}) – FixPhoto Studio`
-                          }
-                          onChange={(e) => {
-                            const next = servicesList.map((s) =>
-                              s.slug === activeEditService.slug
-                                ? { ...s, seoTitle: e.target.value }
-                                : s
-                            );
-                            onUpdateServicesList(next);
-                          }}
-                          placeholder="SEO Title for Google Search & Browser Tab"
-                          className="w-full px-3 py-2 text-xs font-semibold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
+                          value={newSrvSeoTitle}
+                          onChange={(e) => setNewSrvSeoTitle(e.target.value)}
+                          placeholder="e.g., Luxury Watch Retouching Services – FixPhoto Studio"
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
                         />
                       </div>
                       <div>
-                        <label className="block text-[11px] font-semibold text-[#001E5A] mb-1">
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
                           SEO Meta Description (&lt;meta name=&quot;description&quot;&gt;)
                         </label>
                         <input
                           type="text"
-                          value={
-                            activeEditService.seoMetaDescription ??
-                            activeEditService.summary
-                          }
-                          onChange={(e) => {
-                            const next = servicesList.map((s) =>
-                              s.slug === activeEditService.slug
-                                ? { ...s, seoMetaDescription: e.target.value }
-                                : s
-                            );
-                            onUpdateServicesList(next);
-                          }}
-                          placeholder="SEO Meta Description (150–160 chars recommended)"
-                          className="w-full px-3 py-2 text-xs text-slate-700 bg-white border border-slate-300 rounded-lg"
+                          value={newSrvSeoDesc}
+                          onChange={(e) => setNewSrvSeoDesc(e.target.value)}
+                          placeholder="150–160 character SEO summary for Google search results..."
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
                         />
                       </div>
                     </div>
-                  </div>
 
-                  {/* Upload Custom Hero Before/After Images */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <label className="p-3.5 rounded-xl bg-[#F8FAFC] border border-dashed border-[#0088FF] cursor-pointer hover:bg-[#EAF3FC]/60 flex items-center justify-between text-xs font-semibold text-[#001E5A]">
-                      <span className="flex items-center gap-2">
-                        <UploadCloud className="w-4 h-4 text-[#0088FF]" />
-                        <span>
-                          {activeEditService.beforeImageUrl
-                            ? `Replace Hero BEFORE Image (${activeEditService.shortNavTitle})`
-                            : `Upload Hero BEFORE Image (${activeEditService.shortNavTitle})`}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <label className="p-3 rounded-xl bg-white border border-dashed border-[#0088FF] cursor-pointer hover:bg-[#EAF3FC]/60 flex items-center justify-between text-xs font-semibold text-[#001E5A]">
+                        <span className="flex items-center gap-2">
+                          <UploadCloud className="w-4 h-4 text-[#0088FF]" />
+                          <span>
+                            {newSrvBeforeImg
+                              ? 'Custom BEFORE Image Attached ✓'
+                              : 'Optional: Upload Hero BEFORE Image'}
+                          </span>
                         </span>
-                      </span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) =>
-                          handleServiceImageUpload(
-                            activeEditService.slug,
-                            'before',
-                            e.target.files?.[0]
-                          )
-                        }
-                        className="hidden"
-                      />
-                    </label>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) readImageFileAsDataUrl(f, setNewSrvBeforeImg);
+                          }}
+                          className="hidden"
+                        />
+                      </label>
 
-                    <label className="p-3.5 rounded-xl bg-[#F8FAFC] border border-dashed border-[#0088FF] cursor-pointer hover:bg-[#EAF3FC]/60 flex items-center justify-between text-xs font-semibold text-[#001E5A]">
-                      <span className="flex items-center gap-2">
-                        <UploadCloud className="w-4 h-4 text-emerald-600" />
-                        <span>
-                          {activeEditService.afterImageUrl
-                            ? `Replace Hero AFTER Image (${activeEditService.shortNavTitle})`
-                            : `Upload Hero AFTER Image (${activeEditService.shortNavTitle})`}
+                      <label className="p-3 rounded-xl bg-white border border-dashed border-[#0088FF] cursor-pointer hover:bg-[#EAF3FC]/60 flex items-center justify-between text-xs font-semibold text-[#001E5A]">
+                        <span className="flex items-center gap-2">
+                          <UploadCloud className="w-4 h-4 text-emerald-600" />
+                          <span>
+                            {newSrvAfterImg
+                              ? 'Custom AFTER Image Attached ✓'
+                              : 'Optional: Upload Hero AFTER Image'}
+                          </span>
                         </span>
-                      </span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) =>
-                          handleServiceImageUpload(
-                            activeEditService.slug,
-                            'after',
-                            e.target.files?.[0]
-                          )
-                        }
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) readImageFileAsDataUrl(f, setNewSrvAfterImg);
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
 
-                  {/* Add / Manage Split Image + Text Showcase Sections on Service Page */}
-                  <div className="pt-6 border-t border-slate-200 space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddNewServiceForm(false)}
+                        className="px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2.5 text-xs font-bold text-white bg-[#001E5A] hover:bg-[#0088FF] rounded-lg transition-colors flex items-center gap-2"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Create &amp; Publish Service Page</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Single Service Page Editor (Only open when Admin clicks Edit Icon on a Service Page) */}
+                {isServiceEditorOpen && editingServiceDraft && (
+                  <div className="p-6 rounded-2xl bg-[#F0F7FF] border-2 border-[#0088FF] space-y-6 shadow-md">
+                    <div className="flex flex-wrap items-center justify-between gap-4 border-b border-blue-200 pb-4">
+                      <div>
+                        <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
+                          EDITING SERVICE PAGE ({editingServiceDraft.indexNumber}{' '}
+                          {editingServiceDraft.shortNavTitle.toUpperCase()})
+                        </p>
+                        <h3 className="text-lg font-bold text-[#001E5A]">
+                          Modify Content, SEO, Split Sections, Pricing Tiers &amp; Click &ldquo;Save &amp; Publish Page&rdquo;
+                        </h3>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        {onPreviewServicePage && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onPreviewServicePage(editingServiceDraft.slug)
+                            }
+                            className="px-3.5 py-2 text-xs font-semibold text-[#001E5A] bg-white border border-slate-300 hover:border-[#0088FF] rounded-lg transition-colors flex items-center gap-1.5"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-[#0088FF]" />
+                            <span>Preview Live</span>
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsServiceEditorOpen(false);
+                            setEditingServiceDraft(null);
+                          }}
+                          className="px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg flex items-center gap-1"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>Cancel</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = servicesList.map((s) =>
+                              s.slug === editingServiceDraft.slug
+                                ? editingServiceDraft
+                                : s
+                            );
+                            onUpdateServicesList(next);
+                            setIsServiceEditorOpen(false);
+                            notifySaved(
+                              `Saved & published updates to "${editingServiceDraft.title}"!`
+                            );
+                            setEditingServiceDraft(null);
+                          }}
+                          className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>Save &amp; Publish Page</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Service Page Full Headline
+                        </label>
+                        <input
+                          type="text"
+                          value={editingServiceDraft.title}
+                          onChange={(e) =>
+                            setEditingServiceDraft({
+                              ...editingServiceDraft,
+                              title: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 text-xs font-bold bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Short Menu Title
+                        </label>
+                        <input
+                          type="text"
+                          value={editingServiceDraft.shortNavTitle}
+                          onChange={(e) =>
+                            setEditingServiceDraft({
+                              ...editingServiceDraft,
+                              shortNavTitle: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 text-xs font-semibold bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Starting Rate ($ USD)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.05"
+                          value={editingServiceDraft.ratePerImage}
+                          onChange={(e) =>
+                            setEditingServiceDraft({
+                              ...editingServiceDraft,
+                              ratePerImage: Math.max(
+                                0.05,
+                                Number(e.target.value)
+                              ),
+                            })
+                          }
+                          className="w-full px-3 py-2 text-xs font-mono-tabular font-bold bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                    </div>
+
+                    <RichTextEditor
+                      label="Service Hero Subtitle & Page Intro Content (Rich Text Editor: Font, Size, Links, Headings, Lists)"
+                      value={editingServiceDraft.heroSubtitle}
+                      onChange={(html) =>
+                        setEditingServiceDraft({
+                          ...editingServiceDraft,
+                          heroSubtitle: html,
+                        })
+                      }
+                      minHeight="150px"
+                      placeholder="Write or format the service page intro content..."
+                    />
+
+                    {/* On-Page SEO Title & Meta Description for this Service Page */}
+                    <div className="p-4 rounded-xl bg-white border border-[#B8D0EB] space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-mono-tabular font-bold text-[#0088FF]">
+                          ON-PAGE SEO SETTINGS FOR{' '}
+                          {editingServiceDraft.shortNavTitle.toUpperCase()}
+                        </span>
+                        <span className="text-[11px] font-mono-tabular text-emerald-700 font-semibold">
+                          Live &lt;title&gt;, &lt;meta description&gt; &amp; Schema.org
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-[#001E5A] mb-1">
+                            SEO Meta Title (&lt;title&gt;)
+                          </label>
+                          <input
+                            type="text"
+                            value={
+                              editingServiceDraft.seoTitle ??
+                              `${editingServiceDraft.shortNavTitle} ($${editingServiceDraft.ratePerImage.toFixed(
+                                2
+                              )}/${editingServiceDraft.unitLabel}) – FixPhoto Studio`
+                            }
+                            onChange={(e) =>
+                              setEditingServiceDraft({
+                                ...editingServiceDraft,
+                                seoTitle: e.target.value,
+                              })
+                            }
+                            placeholder="SEO Title for Google Search & Browser Tab"
+                            className="w-full px-3 py-2 text-xs font-semibold text-[#001E5A] bg-[#F8FAFC] border border-slate-300 rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-[#001E5A] mb-1">
+                            SEO Meta Description (&lt;meta name=&quot;description&quot;&gt;)
+                          </label>
+                          <input
+                            type="text"
+                            value={
+                              editingServiceDraft.seoMetaDescription ??
+                              editingServiceDraft.summary
+                            }
+                            onChange={(e) =>
+                              setEditingServiceDraft({
+                                ...editingServiceDraft,
+                                seoMetaDescription: e.target.value,
+                              })
+                            }
+                            placeholder="SEO Meta Description (150–160 chars recommended)"
+                            className="w-full px-3 py-2 text-xs text-slate-700 bg-[#F8FAFC] border border-slate-300 rounded-lg"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Upload Custom Hero Before/After Images */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <label className="p-3.5 rounded-xl bg-white border border-dashed border-[#0088FF] cursor-pointer hover:bg-[#EAF3FC]/60 flex items-center justify-between text-xs font-semibold text-[#001E5A]">
+                        <span className="flex items-center gap-2">
+                          <UploadCloud className="w-4 h-4 text-[#0088FF]" />
+                          <span>
+                            {editingServiceDraft.beforeImageUrl
+                              ? `Replace Hero BEFORE Image (${editingServiceDraft.shortNavTitle})`
+                              : `Upload Hero BEFORE Image (${editingServiceDraft.shortNavTitle})`}
+                          </span>
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) =>
+                            handleServiceImageUpload(
+                              editingServiceDraft.slug,
+                              'before',
+                              e.target.files?.[0]
+                            )
+                          }
+                          className="hidden"
+                        />
+                      </label>
+
+                      <label className="p-3.5 rounded-xl bg-white border border-dashed border-[#0088FF] cursor-pointer hover:bg-[#EAF3FC]/60 flex items-center justify-between text-xs font-semibold text-[#001E5A]">
+                        <span className="flex items-center gap-2">
+                          <UploadCloud className="w-4 h-4 text-emerald-600" />
+                          <span>
+                            {editingServiceDraft.afterImageUrl
+                              ? `Replace Hero AFTER Image (${editingServiceDraft.shortNavTitle})`
+                              : `Upload Hero AFTER Image (${editingServiceDraft.shortNavTitle})`}
+                          </span>
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) =>
+                            handleServiceImageUpload(
+                              editingServiceDraft.slug,
+                              'after',
+                              e.target.files?.[0]
+                            )
+                          }
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+
+                    {/* Edit 3 Complexity Pricing Tiers */}
+                    <div className="pt-4 border-t border-blue-200 space-y-3">
+                      <p className="text-xs font-mono-tabular font-bold text-[#001E5A] flex items-center gap-1.5">
+                        <Layers className="w-4 h-4 text-[#0088FF]" />
+                        <span>
+                          EDIT 3 COMPLEXITY PRICING TIERS FOR{' '}
+                          {editingServiceDraft.shortNavTitle.toUpperCase()}
+                        </span>
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {editingServiceDraft.complexityTiers.map(
+                          (tier, tIdx) => (
+                            <div
+                              key={tIdx}
+                              className="p-4 rounded-xl bg-white border border-slate-200 space-y-2"
+                            >
+                              <p className="text-[11px] font-mono-tabular font-bold text-[#0088FF]">
+                                TIER 0{tIdx + 1}
+                              </p>
+                              <input
+                                type="text"
+                                value={tier.tierName}
+                                onChange={(e) => {
+                                  const updatedTiers =
+                                    editingServiceDraft.complexityTiers.map(
+                                      (t, i) =>
+                                        i === tIdx
+                                          ? { ...t, tierName: e.target.value }
+                                          : t
+                                    );
+                                  setEditingServiceDraft({
+                                    ...editingServiceDraft,
+                                    complexityTiers: updatedTiers,
+                                  });
+                                }}
+                                className="w-full px-2.5 py-1 text-xs font-bold text-[#001E5A] bg-[#F8FAFC] border border-slate-300 rounded"
+                              />
+                              <div className="grid grid-cols-2 gap-2">
+                                <input
+                                  type="text"
+                                  value={tier.pricePerImage}
+                                  onChange={(e) => {
+                                    const updatedTiers =
+                                      editingServiceDraft.complexityTiers.map(
+                                        (t, i) =>
+                                          i === tIdx
+                                            ? {
+                                                ...t,
+                                                pricePerImage: e.target.value,
+                                              }
+                                            : t
+                                      );
+                                    setEditingServiceDraft({
+                                      ...editingServiceDraft,
+                                      complexityTiers: updatedTiers,
+                                    });
+                                  }}
+                                  className="px-2 py-1 text-xs font-mono-tabular bg-[#F8FAFC] border border-slate-300 rounded"
+                                />
+                                <input
+                                  type="text"
+                                  value={tier.turnaround}
+                                  onChange={(e) => {
+                                    const updatedTiers =
+                                      editingServiceDraft.complexityTiers.map(
+                                        (t, i) =>
+                                          i === tIdx
+                                            ? {
+                                                ...t,
+                                                turnaround: e.target.value,
+                                              }
+                                            : t
+                                      );
+                                    setEditingServiceDraft({
+                                      ...editingServiceDraft,
+                                      complexityTiers: updatedTiers,
+                                    });
+                                  }}
+                                  className="px-2 py-1 text-xs font-mono-tabular bg-[#F8FAFC] border border-slate-300 rounded"
+                                />
+                              </div>
+                              <textarea
+                                rows={2}
+                                value={tier.description}
+                                onChange={(e) => {
+                                  const updatedTiers =
+                                    editingServiceDraft.complexityTiers.map(
+                                      (t, i) =>
+                                        i === tIdx
+                                          ? {
+                                              ...t,
+                                              description: e.target.value,
+                                            }
+                                          : t
+                                    );
+                                  setEditingServiceDraft({
+                                    ...editingServiceDraft,
+                                    complexityTiers: updatedTiers,
+                                  });
+                                }}
+                                className="w-full px-2.5 py-1 text-xs text-slate-600 bg-[#F8FAFC] border border-slate-300 rounded"
+                              />
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Split Image + Text Section Builder */}
+                    <div className="pt-4 border-t border-blue-200 space-y-4">
                       <p className="text-xs font-mono-tabular font-bold text-[#001E5A] flex items-center gap-1.5">
                         <FileText className="w-4 h-4 text-[#0088FF]" />
                         <span>
-                          SPLIT IMAGE + TEXT SECTION BUILDER (ONE SIDE IMAGE, ONE SIDE TEXT) FOR{' '}
-                          {activeEditService.shortNavTitle.toUpperCase()}
+                          SPLIT IMAGE + TEXT SECTIONS ON{' '}
+                          {editingServiceDraft.shortNavTitle.toUpperCase()}
                         </span>
                       </p>
-                      <span className="text-[11px] font-mono-tabular text-[#0088FF] font-semibold">
-                        Supports Left/Right Image Toggle & Custom Image Upload
-                      </span>
-                    </div>
 
-                    <form
-                      onSubmit={(e) =>
-                        handleAddEditorialBlockToService(e, activeEditService)
-                      }
-                      className="p-5 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-3.5"
-                    >
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-[#001E5A] mb-1">
-                            Section Badge / Eyebrow
-                          </label>
+                      <form
+                        onSubmit={(e) =>
+                          handleAddEditorialBlockToService(
+                            e,
+                            editingServiceDraft
+                          )
+                        }
+                        className="p-4 rounded-xl bg-white border border-slate-200 space-y-3"
+                      >
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                           <input
                             type="text"
                             value={newEditorialBadge}
                             onChange={(e) =>
                               setNewEditorialBadge(e.target.value)
                             }
-                            placeholder="e.g., SECTION 01 · STUDIO CRAFTSMANSHIP"
-                            className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                            placeholder="Section Badge"
+                            className="px-3 py-2 text-xs font-mono-tabular bg-[#F8FAFC] border border-slate-300 rounded-lg"
                           />
-                        </div>
-
-                        <div>
-                          <label className="block text-[11px] font-semibold text-[#001E5A] mb-1">
-                            Image Side Layout
-                          </label>
                           <select
                             value={newEditorialImageSide}
                             onChange={(e) =>
@@ -4212,37 +4895,25 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                                 e.target.value as 'right' | 'left'
                               )
                             }
-                            className="w-full px-3 py-2 text-xs font-semibold bg-white border border-slate-300 rounded-lg"
+                            className="px-3 py-2 text-xs font-semibold bg-[#F8FAFC] border border-slate-300 rounded-lg"
                           >
                             <option value="right">
-                              Text on Left · Image Showcase on Right
+                              Text on Left · Image on Right
                             </option>
                             <option value="left">
-                              Image Showcase on Left · Text on Right
+                              Image on Left · Text on Right
                             </option>
                           </select>
-                        </div>
-
-                        <div>
-                          <label className="block text-[11px] font-semibold text-[#001E5A] mb-1">
-                            Turnaround / QA Caption Badge
-                          </label>
                           <input
                             type="text"
                             value={newEditorialCaption}
                             onChange={(e) =>
                               setNewEditorialCaption(e.target.value)
                             }
-                            placeholder="e.g., Faster Turnaround Time · 12h–24h SLA"
-                            className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                            placeholder="Caption Metric"
+                            className="px-3 py-2 text-xs bg-[#F8FAFC] border border-slate-300 rounded-lg"
                           />
                         </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-semibold text-[#001E5A] mb-1">
-                          Section Headline *
-                        </label>
                         <input
                           type="text"
                           required
@@ -4250,741 +4921,245 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                           onChange={(e) =>
                             setNewEditorialHeadline(e.target.value)
                           }
-                          placeholder={`e.g., Why should you trust & choose FixPhoto Studio for ${activeEditService.shortNavTitle}?`}
-                          className="w-full px-3 py-2 text-xs font-bold bg-white border border-slate-300 rounded-lg"
+                          placeholder="Section Headline *"
+                          className="w-full px-3 py-2 text-xs font-bold bg-[#F8FAFC] border border-slate-300 rounded-lg"
                         />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-semibold text-[#001E5A] mb-1">
-                          Text Paragraphs * (Write each paragraph on a new line)
-                        </label>
-                        <textarea
-                          rows={4}
-                          required
+                        <RichTextEditor
+                          label="Section Body Content * (Rich Text Editor: Font, Size, Links, Headings, Bullet Lists)"
                           value={newEditorialParagraphs}
-                          onChange={(e) =>
-                            setNewEditorialParagraphs(e.target.value)
-                          }
-                          placeholder={
-                            'Reliable editing is about more than removing a backdrop. Your finished files need consistent edges and accurate shapes.\nOur senior editors manually control difficult curves, corners, holes, and product details.\nWhether you send ten photos or a high-volume catalog, our production team supports bulk editing.'
-                          }
-                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                          onChange={setNewEditorialParagraphs}
+                          minHeight="160px"
+                          placeholder="Write and format the section body paragraphs, bullet points, or links..."
                         />
-                      </div>
+                        <button
+                          type="submit"
+                          className="px-4 py-2 text-xs font-semibold text-white bg-[#001E5A] hover:bg-[#0088FF] rounded-lg transition-colors flex items-center gap-1.5"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Add Split Section</span>
+                        </button>
+                      </form>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-[#001E5A] mb-1">
-                            Highlight Badges (Comma-separated)
-                          </label>
-                          <input
-                            type="text"
-                            value={newEditorialHighlights}
-                            onChange={(e) =>
-                              setNewEditorialHighlights(e.target.value)
-                            }
-                            placeholder="100% Hand-Crafted, Dual 400% Zoom QA, 12h–24h SLA"
-                            className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[11px] font-semibold text-[#001E5A] mb-1">
-                            Upload Side Showcase Image (Optional)
-                          </label>
-                          <label className="px-3 py-2 rounded-lg bg-white border border-dashed border-[#0088FF] text-xs font-semibold text-[#001E5A] cursor-pointer flex items-center justify-center gap-1.5 hover:bg-[#EAF3FC]">
-                            <UploadCloud className="w-4 h-4 text-[#0088FF]" />
-                            <span>
-                              {newEditorialImageUrl
-                                ? 'Custom Side Image Loaded ✓ (Click to Replace)'
-                                : 'Upload Custom Side Image (PNG/JPG/WebP)'}
-                            </span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                if (f)
-                                  readImageFileAsDataUrl(
-                                    f,
-                                    setNewEditorialImageUrl
-                                  );
-                              }}
-                              className="hidden"
-                            />
-                          </label>
-                        </div>
-                      </div>
-
-                      <button
-                        type="submit"
-                        className="px-5 py-2.5 text-xs font-semibold text-white bg-[#001E5A] hover:bg-[#0088FF] rounded-lg transition-colors flex items-center gap-2"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span>
-                          Add Split Image + Text Section to{' '}
-                          {activeEditService.shortNavTitle}
-                        </span>
-                      </button>
-                    </form>
-
-                    {/* Existing Custom Split Image + Text Sections List */}
-                    {activeEditService.editorialBlocks &&
-                      activeEditService.editorialBlocks.length > 0 && (
-                        <div className="space-y-3">
-                          <p className="text-xs font-bold text-[#001E5A]">
-                            Custom Split Image + Text Sections on{' '}
-                            {activeEditService.shortNavTitle} (
-                            {activeEditService.editorialBlocks.length})
-                          </p>
-                          {activeEditService.editorialBlocks.map(
-                            (block, bIdx) => (
-                              <div
-                                key={block.id || bIdx}
-                                className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-2.5 text-xs"
-                              >
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <span className="font-mono-tabular font-bold text-[#0088FF]">
-                                    {block.sectionBadge} · Image on{' '}
-                                    {block.imagePosition.toUpperCase()}
-                                  </span>
-                                  <div className="flex items-center gap-2">
+                      {editingServiceDraft.editorialBlocks &&
+                        editingServiceDraft.editorialBlocks.length > 0 && (
+                          <div className="space-y-3">
+                            {editingServiceDraft.editorialBlocks.map(
+                              (block, bIdx) => (
+                                <div
+                                  key={block.id || bIdx}
+                                  className="p-4 rounded-xl bg-white border border-slate-200 space-y-2.5 text-xs"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-mono-tabular font-bold text-[#0088FF]">
+                                      {block.sectionBadge} · Image on{' '}
+                                      {block.imagePosition.toUpperCase()}
+                                    </span>
                                     <button
                                       type="button"
                                       onClick={() => {
                                         const nextBlocks = (
-                                          activeEditService.editorialBlocks ||
-                                          []
-                                        ).map((b, i) =>
-                                          i === bIdx
-                                            ? {
-                                                ...b,
-                                                imagePosition: (b.imagePosition ===
-                                                'right'
-                                                  ? 'left'
-                                                  : 'right') as
-                                                  | 'right'
-                                                  | 'left',
-                                              }
-                                            : b
-                                        );
-                                        onUpdateServicesList(
-                                          servicesList.map((s) =>
-                                            s.slug === activeEditService.slug
-                                              ? {
-                                                  ...s,
-                                                  editorialBlocks: nextBlocks,
-                                                }
-                                              : s
-                                          )
-                                        );
-                                        notifySaved(
-                                          'Swapped Image/Text column side!'
-                                        );
-                                      }}
-                                      className="px-2.5 py-1 rounded bg-white border border-slate-300 font-semibold text-[#001E5A] hover:bg-[#EAF3FC]"
-                                    >
-                                      Flip Image Side ↔
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const nextBlocks = (
-                                          activeEditService.editorialBlocks ||
+                                          editingServiceDraft.editorialBlocks ||
                                           []
                                         ).filter((_, i) => i !== bIdx);
-                                        onUpdateServicesList(
-                                          servicesList.map((s) =>
-                                            s.slug === activeEditService.slug
-                                              ? {
-                                                  ...s,
-                                                  editorialBlocks: nextBlocks,
-                                                }
-                                              : s
-                                          )
-                                        );
-                                        notifySaved(
-                                          'Removed Split Image + Text section.'
-                                        );
+                                        setEditingServiceDraft({
+                                          ...editingServiceDraft,
+                                          editorialBlocks: nextBlocks,
+                                        });
                                       }}
                                       className="text-slate-400 hover:text-red-600 p-1"
                                     >
                                       <Trash2 className="w-4 h-4" />
                                     </button>
                                   </div>
+                                  <input
+                                    type="text"
+                                    value={block.headline}
+                                    onChange={(e) => {
+                                      const nextBlocks = (
+                                        editingServiceDraft.editorialBlocks ||
+                                        []
+                                      ).map((b, i) =>
+                                        i === bIdx
+                                          ? { ...b, headline: e.target.value }
+                                          : b
+                                      );
+                                      setEditingServiceDraft({
+                                        ...editingServiceDraft,
+                                        editorialBlocks: nextBlocks,
+                                      });
+                                    }}
+                                    className="w-full px-3 py-1.5 font-bold text-[#001E5A] bg-[#F8FAFC] border border-slate-300 rounded"
+                                  />
+                                  <RichTextEditor
+                                    label="Section Body Content (Font, Size, Links, Headings, Lists)"
+                                    value={block.paragraphs.join('\n\n')}
+                                    onChange={(html) => {
+                                      const nextBlocks = (
+                                        editingServiceDraft.editorialBlocks ||
+                                        []
+                                      ).map((b, i) =>
+                                        i === bIdx
+                                          ? {
+                                              ...b,
+                                              paragraphs: [html],
+                                            }
+                                          : b
+                                      );
+                                      setEditingServiceDraft({
+                                        ...editingServiceDraft,
+                                        editorialBlocks: nextBlocks,
+                                      });
+                                    }}
+                                    minHeight="160px"
+                                  />
                                 </div>
-
-                                <input
-                                  type="text"
-                                  value={block.headline}
-                                  onChange={(e) => {
-                                    const nextBlocks = (
-                                      activeEditService.editorialBlocks || []
-                                    ).map((b, i) =>
-                                      i === bIdx
-                                        ? { ...b, headline: e.target.value }
-                                        : b
-                                    );
-                                    onUpdateServicesList(
-                                      servicesList.map((s) =>
-                                        s.slug === activeEditService.slug
-                                          ? {
-                                              ...s,
-                                              editorialBlocks: nextBlocks,
-                                            }
-                                          : s
-                                      )
-                                    );
-                                  }}
-                                  className="w-full px-3 py-1.5 font-bold text-[#001E5A] bg-white border border-slate-300 rounded"
-                                />
-
-                                <textarea
-                                  rows={3}
-                                  value={block.paragraphs.join('\n')}
-                                  onChange={(e) => {
-                                    const nextBlocks = (
-                                      activeEditService.editorialBlocks || []
-                                    ).map((b, i) =>
-                                      i === bIdx
-                                        ? {
-                                            ...b,
-                                            paragraphs: e.target.value
-                                              .split('\n')
-                                              .filter(Boolean),
-                                          }
-                                        : b
-                                    );
-                                    onUpdateServicesList(
-                                      servicesList.map((s) =>
-                                        s.slug === activeEditService.slug
-                                          ? {
-                                              ...s,
-                                              editorialBlocks: nextBlocks,
-                                            }
-                                          : s
-                                      )
-                                    );
-                                  }}
-                                  className="w-full px-3 py-1.5 text-slate-600 bg-white border border-slate-300 rounded"
-                                />
-                              </div>
-                            )
-                          )}
-                        </div>
-                      )}
-                  </div>
-
-                  {/* Edit 3 Complexity Pricing Tiers */}
-                  <div className="pt-4 border-t border-slate-200 space-y-3">
-                    <p className="text-xs font-mono-tabular font-bold text-[#001E5A] flex items-center gap-1.5">
-                      <Layers className="w-4 h-4 text-[#0088FF]" />
-                      <span>
-                        EDIT 3 COMPLEXITY PRICING TIERS FOR{' '}
-                        {activeEditService.shortNavTitle.toUpperCase()}
-                      </span>
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {activeEditService.complexityTiers.map((tier, tIdx) => (
-                        <div
-                          key={tIdx}
-                          className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-2"
-                        >
-                          <p className="text-[11px] font-mono-tabular font-bold text-[#0088FF]">
-                            TIER 0{tIdx + 1}
-                          </p>
-                          <input
-                            type="text"
-                            value={tier.tierName}
-                            onChange={(e) => {
-                              const updatedTiers =
-                                activeEditService.complexityTiers.map((t, i) =>
-                                  i === tIdx
-                                    ? { ...t, tierName: e.target.value }
-                                    : t
-                                );
-                              onUpdateServicesList(
-                                servicesList.map((s) =>
-                                  s.slug === activeEditService.slug
-                                    ? { ...s, complexityTiers: updatedTiers }
-                                    : s
-                                )
-                              );
-                            }}
-                            className="w-full px-2.5 py-1 text-xs font-bold text-[#001E5A] bg-white border border-slate-300 rounded"
-                          />
-                          <div className="grid grid-cols-2 gap-2">
-                            <input
-                              type="text"
-                              value={tier.pricePerImage}
-                              onChange={(e) => {
-                                const updatedTiers =
-                                  activeEditService.complexityTiers.map(
-                                    (t, i) =>
-                                      i === tIdx
-                                        ? {
-                                            ...t,
-                                            pricePerImage: e.target.value,
-                                          }
-                                        : t
-                                  );
-                                onUpdateServicesList(
-                                  servicesList.map((s) =>
-                                    s.slug === activeEditService.slug
-                                      ? { ...s, complexityTiers: updatedTiers }
-                                      : s
-                                  )
-                                );
-                              }}
-                              className="px-2 py-1 text-xs font-mono-tabular bg-white border border-slate-300 rounded"
-                            />
-                            <input
-                              type="text"
-                              value={tier.turnaround}
-                              onChange={(e) => {
-                                const updatedTiers =
-                                  activeEditService.complexityTiers.map(
-                                    (t, i) =>
-                                      i === tIdx
-                                        ? { ...t, turnaround: e.target.value }
-                                        : t
-                                  );
-                                onUpdateServicesList(
-                                  servicesList.map((s) =>
-                                    s.slug === activeEditService.slug
-                                      ? { ...s, complexityTiers: updatedTiers }
-                                      : s
-                                  )
-                                );
-                              }}
-                              className="px-2 py-1 text-xs font-mono-tabular bg-white border border-slate-300 rounded"
-                            />
+                              )
+                            )}
                           </div>
-                          <textarea
-                            rows={2}
-                            value={tier.description}
-                            onChange={(e) => {
-                              const updatedTiers =
-                                activeEditService.complexityTiers.map((t, i) =>
-                                  i === tIdx
-                                    ? { ...t, description: e.target.value }
-                                    : t
-                                );
-                              onUpdateServicesList(
-                                servicesList.map((s) =>
-                                  s.slug === activeEditService.slug
-                                    ? { ...s, complexityTiers: updatedTiers }
-                                    : s
-                                )
-                              );
-                            }}
-                            className="w-full px-2.5 py-1 text-xs text-slate-600 bg-white border border-slate-300 rounded"
-                          />
-                        </div>
-                      ))}
+                        )}
+                    </div>
+
+                    <div className="flex items-center justify-end gap-3 pt-4 border-t border-blue-200">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsServiceEditorOpen(false);
+                          setEditingServiceDraft(null);
+                        }}
+                        className="px-4 py-2.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-lg"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = servicesList.map((s) =>
+                            s.slug === editingServiceDraft.slug
+                              ? editingServiceDraft
+                              : s
+                          );
+                          onUpdateServicesList(next);
+                          setIsServiceEditorOpen(false);
+                          notifySaved(
+                            `Saved & published updates to "${editingServiceDraft.title}"!`
+                          );
+                          setEditingServiceDraft(null);
+                        }}
+                        className="px-6 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors flex items-center gap-2 shadow-xs"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Save &amp; Publish Service Page</span>
+                      </button>
                     </div>
                   </div>
+                )}
 
-                  {/* Add Custom Before/After Sample Card to This Service Page */}
-                  <div className="pt-4 border-t border-slate-200 space-y-4">
-                    <p className="text-xs font-mono-tabular font-bold text-[#001E5A] flex items-center gap-1.5">
-                      <Camera className="w-4 h-4 text-[#0088FF]" />
-                      <span>
-                        ADD BEFORE/AFTER SAMPLE WORK TO{' '}
-                        {activeEditService.shortNavTitle.toUpperCase()} PAGE
-                      </span>
-                    </p>
-
-                    <form
-                      onSubmit={(e) =>
-                        handleAddSampleToService(e, activeEditService)
-                      }
-                      className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-3"
-                    >
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                        <input
-                          type="text"
-                          required
-                          value={newSampleTitle}
-                          onChange={(e) => setNewSampleTitle(e.target.value)}
-                          placeholder="Sample Title (e.g., Multi-Stone Emerald Ring)"
-                          className="md:col-span-2 px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                        />
-                        <input
-                          type="text"
-                          value={newSampleTag}
-                          onChange={(e) => setNewSampleTag(e.target.value)}
-                          placeholder="Complexity Tag"
-                          className="px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                        />
-                        <input
-                          type="text"
-                          value={newSampleTurnaround}
-                          onChange={(e) =>
-                            setNewSampleTurnaround(e.target.value)
-                          }
-                          placeholder="Turnaround (e.g., 12h SLA)"
-                          className="px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-center">
-                        <input
-                          type="text"
-                          value={newSampleNote}
-                          onChange={(e) => setNewSampleNote(e.target.value)}
-                          placeholder="Technical retouching notes..."
-                          className="px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                        />
-
-                        <label className="px-3 py-2 rounded-lg bg-white border border-dashed border-[#0088FF] text-xs font-semibold text-[#001E5A] cursor-pointer flex items-center justify-center gap-1.5">
-                          <UploadCloud className="w-3.5 h-3.5 text-[#0088FF]" />
-                          <span>
-                            {newSampleBeforeImg
-                              ? 'Sample BEFORE Loaded ✓'
-                              : 'Upload Sample BEFORE'}
-                          </span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => {
-                              const f = e.target.files?.[0];
-                              if (f)
-                                readImageFileAsDataUrl(f, setNewSampleBeforeImg);
-                            }}
-                            className="hidden"
-                          />
-                        </label>
-
-                        <label className="px-3 py-2 rounded-lg bg-white border border-dashed border-[#0088FF] text-xs font-semibold text-[#001E5A] cursor-pointer flex items-center justify-center gap-1.5">
-                          <UploadCloud className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>
-                            {newSampleAfterImg
-                              ? 'Sample AFTER Loaded ✓'
-                              : 'Upload Sample AFTER'}
-                          </span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => {
-                              const f = e.target.files?.[0];
-                              if (f)
-                                readImageFileAsDataUrl(f, setNewSampleAfterImg);
-                            }}
-                            className="hidden"
-                          />
-                        </label>
-                      </div>
-
-                      <button
-                        type="submit"
-                        className="px-4 py-2 text-xs font-semibold text-white bg-[#001E5A] hover:bg-[#0088FF] rounded-lg transition-colors flex items-center gap-1.5"
+                {/* Clean Normal List of All Published Service Pages */}
+                <div className="space-y-2.5">
+                  {servicesList.map((srv) => {
+                    const isBeingEdited =
+                      isServiceEditorOpen &&
+                      editingServiceDraft?.slug === srv.slug;
+                    return (
+                      <div
+                        key={srv.slug}
+                        className={`p-4 rounded-xl border flex flex-wrap items-center justify-between gap-4 transition-all ${
+                          isBeingEdited
+                            ? 'bg-blue-50/60 border-[#0088FF]'
+                            : 'bg-[#F8FAFC] border-slate-200 hover:border-slate-300'
+                        }`}
                       >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>
-                          Add Sample Card to {activeEditService.shortNavTitle}
-                        </span>
-                      </button>
-                    </form>
-                  </div>
-
-                  {/* Add / Manage Service FAQs */}
-                  <div className="pt-4 border-t border-slate-200 space-y-4">
-                    <p className="text-xs font-mono-tabular font-bold text-[#001E5A] flex items-center gap-1.5">
-                      <HelpCircle className="w-4 h-4 text-[#0088FF]" />
-                      <span>
-                        ADD CUSTOM FAQ TO{' '}
-                        {activeEditService.shortNavTitle.toUpperCase()} PAGE
-                      </span>
-                    </p>
-
-                    <form
-                      onSubmit={(e) =>
-                        handleAddFaqToService(e, activeEditService)
-                      }
-                      className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-3"
-                    >
-                      <input
-                        type="text"
-                        required
-                        value={newFaqQuestion}
-                        onChange={(e) => setNewFaqQuestion(e.target.value)}
-                        placeholder="FAQ Question (e.g., Do you include multi-path PSD layers?)"
-                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg font-semibold"
-                      />
-                      <textarea
-                        rows={2}
-                        required
-                        value={newFaqAnswer}
-                        onChange={(e) => setNewFaqAnswer(e.target.value)}
-                        placeholder="Detailed FAQ Answer..."
-                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                      />
-                      <button
-                        type="submit"
-                        className="px-4 py-2 text-xs font-semibold text-white bg-[#0088FF] hover:bg-[#001E5A] rounded-lg transition-colors flex items-center gap-1.5"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>
-                          Add FAQ to {activeEditService.shortNavTitle}
-                        </span>
-                      </button>
-                    </form>
-
-                    {activeEditService.faqs &&
-                      activeEditService.faqs.length > 0 && (
-                        <div className="space-y-2">
-                          {activeEditService.faqs.map((faq, fIdx) => (
-                            <div
-                              key={fIdx}
-                              className="p-3 rounded-lg bg-[#F8FAFC] border border-slate-200 flex items-start justify-between gap-3 text-xs"
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="px-2 py-0.5 rounded bg-[#001E5A] text-white font-mono-tabular font-bold text-[11px]">
+                              {srv.indexNumber}
+                            </span>
+                            <span className="font-bold text-[#001E5A] text-sm">
+                              {srv.title}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-mono-tabular font-bold ${
+                                srv.division === 'video_editing'
+                                  ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                  : 'bg-blue-100 text-[#001E5A] border border-blue-200'
+                              }`}
                             >
-                              <div>
-                                <p className="font-bold text-[#001E5A]">
-                                  Q: {faq.question}
-                                </p>
-                                <p className="text-slate-600 mt-0.5">
-                                  {faq.answer}
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const nextFaqs = (
-                                    activeEditService.faqs || []
-                                  ).filter((_, i) => i !== fIdx);
-                                  onUpdateServicesList(
-                                    servicesList.map((s) =>
-                                      s.slug === activeEditService.slug
-                                        ? { ...s, faqs: nextFaqs }
-                                        : s
-                                    )
-                                  );
-                                }}
-                                className="text-slate-400 hover:text-red-600 p-1"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ))}
+                              {srv.division === 'video_editing'
+                                ? 'VIDEO EDITING'
+                                : 'PHOTO EDITING'}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 font-mono-tabular">
+                            <span className="text-[#0088FF] font-bold">
+                              From ${srv.ratePerImage.toFixed(2)} /{' '}
+                              {srv.unitLabel}
+                            </span>
+                            <span>·</span>
+                            <span>{srv.turnaroundLabel}</span>
+                            <span>·</span>
+                            <span>Slug: #{srv.slug}</span>
+                          </div>
                         </div>
-                      )}
-                  </div>
+
+                        <div className="flex items-center gap-2">
+                          {onPreviewServicePage && (
+                            <button
+                              type="button"
+                              onClick={() => onPreviewServicePage(srv.slug)}
+                              className="px-3 py-1.5 rounded-lg bg-white border border-slate-300 hover:border-[#0088FF] text-xs font-semibold text-[#001E5A] flex items-center gap-1"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-[#0088FF]" />
+                              <span>View</span>
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingServiceSlug(srv.slug);
+                              setEditingServiceDraft({ ...srv });
+                              setIsServiceEditorOpen(true);
+                              setShowAddNewServiceForm(false);
+                            }}
+                            className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5"
+                          >
+                            <Pencil className="w-3.5 h-3.5 text-[#0088FF]" />
+                            <span>Edit Page</span>
+                          </button>
+
+                          {servicesList.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const remaining = servicesList.filter(
+                                  (s) => s.slug !== srv.slug
+                                );
+                                onUpdateServicesList(remaining);
+                                if (editingServiceSlug === srv.slug) {
+                                  setEditingServiceSlug(remaining[0].slug);
+                                }
+                                if (editingServiceDraft?.slug === srv.slug) {
+                                  setIsServiceEditorOpen(false);
+                                  setEditingServiceDraft(null);
+                                }
+                                notifySaved(
+                                  `Removed service page "${srv.shortNavTitle}".`
+                                );
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-red-600 border border-slate-200 bg-white rounded-lg"
+                              title="Delete Service Page"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
+              </div>
 
-              {/* 2. ADD NEW CUSTOM SERVICE PAGE BUILDER */}
-              <form
-                onSubmit={handleCreateCustomServicePage}
-                className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
-                  <div>
-                    <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
-                      + CREATE NEW SERVICE PAGE
-                    </p>
-                    <h2 className="text-lg font-bold text-[#001E5A]">
-                      Add a New Photo Editing or Video Editing Service Page
-                    </h2>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Service Division
-                    </label>
-                    <select
-                      value={newSrvDivision}
-                      onChange={(e) =>
-                        setNewSrvDivision(e.target.value as StudioDivision)
-                      }
-                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg font-semibold"
-                    >
-                      <option value="photo_editing">
-                        01. Photo Editing Division
-                      </option>
-                      <option value="video_editing">
-                        02. Video Editing Division
-                      </option>
-                    </select>
-                  </div>
-
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      New Service Page Title *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={newSrvName}
-                      onChange={(e) => setNewSrvName(e.target.value)}
-                      placeholder="e.g., Automotive Photo Retouching & Shadow"
-                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Starting Rate ($ USD)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.05"
-                      min="0.10"
-                      value={newSrvRate}
-                      onChange={(e) => setNewSrvRate(e.target.value)}
-                      className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Turnaround SLA Badge
-                    </label>
-                    <input
-                      type="text"
-                      value={newSrvTurnaround}
-                      onChange={(e) => setNewSrvTurnaround(e.target.value)}
-                      className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Deliverables Specification
-                    </label>
-                    <input
-                      type="text"
-                      value={newSrvDeliverables}
-                      onChange={(e) => setNewSrvDeliverables(e.target.value)}
-                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Default Interactive Canvas Preset
-                    </label>
-                    <select
-                      value={newSrvArtwork}
-                      onChange={(e) =>
-                        setNewSrvArtwork(
-                          e.target.value as ServiceDefinition['artworkType']
-                        )
-                      }
-                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                    >
-                      <option value="watch">Luxury Watch / Clipping Path</option>
-                      <option value="real_estate">
-                        Real Estate HDR & Staging
-                      </option>
-                      <option value="jewelry">Macro Fine Jewelry</option>
-                      <option value="mannequin">3D Ghost Mannequin</option>
-                      <option value="footwear">
-                        E-Commerce Footwear & Shadow
-                      </option>
-                      <option value="beauty">
-                        Beauty & Portrait Retouching
-                      </option>
-                      <option value="variant">Multi-Color & Video Grade</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                    Hero Subtitle & Overview
-                  </label>
-                  <input
-                    type="text"
-                    value={newSrvSubtitle}
-                    onChange={(e) => setNewSrvSubtitle(e.target.value)}
-                    placeholder="Describe the workflow, QA precision, and commercial deliverables..."
-                    className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      SEO Meta Title (&lt;title&gt;)
-                    </label>
-                    <input
-                      type="text"
-                      value={newSrvSeoTitle}
-                      onChange={(e) => setNewSrvSeoTitle(e.target.value)}
-                      placeholder="e.g., Luxury Watch Retouching Services – FixPhoto Studio"
-                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      SEO Meta Description (&lt;meta name=&quot;description&quot;&gt;)
-                    </label>
-                    <input
-                      type="text"
-                      value={newSrvSeoDesc}
-                      onChange={(e) => setNewSrvSeoDesc(e.target.value)}
-                      placeholder="150–160 character SEO summary for Google search results..."
-                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <label className="p-3 rounded-xl bg-[#F8FAFC] border border-dashed border-[#0088FF] cursor-pointer hover:bg-[#EAF3FC]/60 flex items-center justify-between text-xs font-semibold text-[#001E5A]">
-                    <span className="flex items-center gap-2">
-                      <UploadCloud className="w-4 h-4 text-[#0088FF]" />
-                      <span>
-                        {newSrvBeforeImg
-                          ? 'Custom BEFORE Image Attached ✓'
-                          : 'Optional: Upload Hero BEFORE Image'}
-                      </span>
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) readImageFileAsDataUrl(f, setNewSrvBeforeImg);
-                      }}
-                      className="hidden"
-                    />
-                  </label>
-
-                  <label className="p-3 rounded-xl bg-[#F8FAFC] border border-dashed border-[#0088FF] cursor-pointer hover:bg-[#EAF3FC]/60 flex items-center justify-between text-xs font-semibold text-[#001E5A]">
-                    <span className="flex items-center gap-2">
-                      <UploadCloud className="w-4 h-4 text-emerald-600" />
-                      <span>
-                        {newSrvAfterImg
-                          ? 'Custom AFTER Image Attached ✓'
-                          : 'Optional: Upload Hero AFTER Image'}
-                      </span>
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) readImageFileAsDataUrl(f, setNewSrvAfterImg);
-                      }}
-                      className="hidden"
-                    />
-                  </label>
-                </div>
-
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 text-xs font-semibold text-white bg-[#001E5A] hover:bg-[#0088FF] rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Create & Publish Custom Service Page</span>
-                </button>
-              </form>
-
-              {/* 3. 6 Main Menu Photo Editing Services Editor */}
+              {/* 2. 6 Main Menu Flagship Service Boxes (Read-Only List by default, Edit Icon to modify & Save) */}
               <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-3">
                   <div>
@@ -4992,167 +5167,230 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                       CORE STUDIO MENU · 6 FLAGSHIP PHOTO EDITING SERVICES
                     </p>
                     <h2 className="text-lg font-bold text-[#001E5A]">
-                      Edit 6 Flagship Service Boxes (Titles, Subtitles, Rates & Before/After Images)
+                      6 Flagship Service Boxes — Click Edit Icon to Modify Title, Rate or Images
                     </h2>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                  {mainMenuServices.map((item, idx) => (
-                    <div
-                      key={item.id}
-                      className="rounded-xl bg-[#F8FAFC] border border-slate-200 overflow-hidden flex flex-col justify-between"
-                    >
-                      <BeforeAfterStudioCanvas
-                        artworkType={item.artworkType}
-                        beforeImageUrl={item.beforeImageUrl}
-                        afterImageUrl={item.afterImageUrl}
-                        initialSplit={50}
-                        showVectorOverlay={item.artworkType === 'watch'}
-                        interactive={true}
-                        className="h-44"
-                      />
-                      <div className="p-4 space-y-2.5">
-                        <p className="text-[11px] font-mono-tabular font-bold text-[#0088FF]">
-                          MAIN MENU SLOT 0{idx + 1}
-                        </p>
-                        <div>
-                          <label className="block text-[11px] text-slate-500">
-                            Menu Title
-                          </label>
-                          <input
-                            type="text"
-                            value={item.title}
-                            onChange={(e) => {
-                              const next = mainMenuServices.map((m) =>
-                                m.id === item.id
-                                  ? { ...m, title: e.target.value }
-                                  : m
-                              );
-                              onUpdateMainMenuServices(next);
-                            }}
-                            className="w-full px-2.5 py-1.5 text-xs font-bold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] text-slate-500">
-                            Sub-Services Subtitle
-                          </label>
-                          <input
-                            type="text"
-                            value={item.subtitle}
-                            onChange={(e) => {
-                              const next = mainMenuServices.map((m) =>
-                                m.id === item.id
-                                  ? { ...m, subtitle: e.target.value }
-                                  : m
-                              );
-                              onUpdateMainMenuServices(next);
-                            }}
-                            className="w-full px-2.5 py-1.5 text-xs text-slate-700 bg-white border border-slate-300 rounded-lg"
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-[11px] text-slate-500">
-                              Starting Rate
-                            </label>
-                            <input
-                              type="text"
-                              value={item.startingRate}
-                              onChange={(e) => {
-                                const next = mainMenuServices.map((m) =>
-                                  m.id === item.id
-                                    ? { ...m, startingRate: e.target.value }
-                                    : m
-                                );
-                                onUpdateMainMenuServices(next);
-                              }}
-                              className="w-full px-2 py-1 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[11px] text-slate-500">
-                              Turnaround
-                            </label>
-                            <input
-                              type="text"
-                              value={item.turnaround}
-                              onChange={(e) => {
-                                const next = mainMenuServices.map((m) =>
-                                  m.id === item.id
-                                    ? { ...m, turnaround: e.target.value }
-                                    : m
-                                );
-                                onUpdateMainMenuServices(next);
-                              }}
-                              className="w-full px-2 py-1 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                            />
-                          </div>
-                        </div>
+                  {mainMenuServices.map((item, idx) => {
+                    const isEditingBox = editingMainMenuDraft?.id === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        className={`rounded-xl border overflow-hidden flex flex-col justify-between ${
+                          isEditingBox
+                            ? 'bg-blue-50/40 border-[#0088FF] shadow-sm'
+                            : 'bg-[#F8FAFC] border-slate-200'
+                        }`}
+                      >
+                        <BeforeAfterStudioCanvas
+                          artworkType={item.artworkType}
+                          beforeImageUrl={
+                            isEditingBox
+                              ? editingMainMenuDraft.beforeImageUrl
+                              : item.beforeImageUrl
+                          }
+                          afterImageUrl={
+                            isEditingBox
+                              ? editingMainMenuDraft.afterImageUrl
+                              : item.afterImageUrl
+                          }
+                          initialSplit={50}
+                          showVectorOverlay={item.artworkType === 'watch'}
+                          interactive={true}
+                          className="h-44"
+                        />
 
-                        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-200">
-                          <label className="py-1.5 px-2 rounded-lg bg-[#EAF3FC] hover:bg-[#001E5A] hover:text-white text-[#001E5A] text-[11px] font-semibold cursor-pointer transition-colors flex items-center justify-center gap-1 text-center">
-                            <UploadCloud className="w-3 h-3 shrink-0" />
-                            <span>
-                              {item.beforeImageUrl
-                                ? 'Replace BEFORE'
-                                : 'Upload BEFORE'}
+                        <div className="p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-mono-tabular font-bold text-[#0088FF]">
+                              MAIN MENU SLOT 0{idx + 1}
                             </span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (!file) return;
-                                readImageFileAsDataUrl(file, (dataUrl) => {
-                                  const next = mainMenuServices.map((m) =>
-                                    m.id === item.id
-                                      ? { ...m, beforeImageUrl: dataUrl }
-                                      : m
-                                  );
-                                  onUpdateMainMenuServices(next);
-                                  notifySaved(
-                                    `Updated BEFORE image for "${item.title}"!`
-                                  );
-                                });
-                              }}
-                              className="hidden"
-                            />
-                          </label>
+                            {!isEditingBox ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditingMainMenuDraft({ ...item })
+                                }
+                                className="px-3 py-1 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5"
+                              >
+                                <Pencil className="w-3 h-3 text-[#0088FF]" />
+                                <span>Edit</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setEditingMainMenuDraft(null)}
+                                className="px-2.5 py-1 rounded-lg bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1"
+                              >
+                                <X className="w-3 h-3" />
+                                <span>Cancel</span>
+                              </button>
+                            )}
+                          </div>
 
-                          <label className="py-1.5 px-2 rounded-lg bg-[#0088FF] hover:bg-[#001E5A] text-white text-[11px] font-semibold cursor-pointer transition-colors flex items-center justify-center gap-1 text-center">
-                            <UploadCloud className="w-3 h-3 shrink-0" />
-                            <span>
-                              {item.afterImageUrl
-                                ? 'Replace AFTER'
-                                : 'Upload AFTER'}
-                            </span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (!file) return;
-                                readImageFileAsDataUrl(file, (dataUrl) => {
-                                  const next = mainMenuServices.map((m) =>
-                                    m.id === item.id
-                                      ? { ...m, afterImageUrl: dataUrl }
-                                      : m
-                                  );
-                                  onUpdateMainMenuServices(next);
-                                  notifySaved(
-                                    `Updated AFTER image for "${item.title}"!`
-                                  );
-                                });
-                              }}
-                              className="hidden"
-                            />
-                          </label>
+                          {!isEditingBox ? (
+                            <div className="space-y-1 text-xs">
+                              <p className="font-bold text-[#001E5A] text-sm">
+                                {item.title}
+                              </p>
+                              <p className="text-slate-600 line-clamp-2">
+                                {item.subtitle}
+                              </p>
+                              <div className="flex items-center justify-between pt-2 border-t border-slate-200 font-mono-tabular">
+                                <span className="font-bold text-[#0088FF]">
+                                  {item.startingRate}
+                                </span>
+                                <span className="text-slate-500">
+                                  {item.turnaround}
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            editingMainMenuDraft && (
+                              <div className="space-y-2.5 bg-white p-3 rounded-xl border border-blue-200">
+                                <div>
+                                  <label className="block text-[11px] text-slate-500">
+                                    Menu Title
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingMainMenuDraft.title}
+                                    onChange={(e) =>
+                                      setEditingMainMenuDraft({
+                                        ...editingMainMenuDraft,
+                                        title: e.target.value,
+                                      })
+                                    }
+                                    className="w-full px-2.5 py-1.5 text-xs font-bold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] text-slate-500">
+                                    Sub-Services Subtitle
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingMainMenuDraft.subtitle}
+                                    onChange={(e) =>
+                                      setEditingMainMenuDraft({
+                                        ...editingMainMenuDraft,
+                                        subtitle: e.target.value,
+                                      })
+                                    }
+                                    className="w-full px-2.5 py-1.5 text-xs text-slate-700 bg-white border border-slate-300 rounded-lg"
+                                  />
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <label className="block text-[11px] text-slate-500">
+                                      Starting Rate
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={editingMainMenuDraft.startingRate}
+                                      onChange={(e) =>
+                                        setEditingMainMenuDraft({
+                                          ...editingMainMenuDraft,
+                                          startingRate: e.target.value,
+                                        })
+                                      }
+                                      className="w-full px-2 py-1 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] text-slate-500">
+                                      Turnaround
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={editingMainMenuDraft.turnaround}
+                                      onChange={(e) =>
+                                        setEditingMainMenuDraft({
+                                          ...editingMainMenuDraft,
+                                          turnaround: e.target.value,
+                                        })
+                                      }
+                                      className="w-full px-2 py-1 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2 pt-1">
+                                  <label className="py-1.5 px-2 rounded-lg bg-[#EAF3FC] hover:bg-[#001E5A] hover:text-white text-[#001E5A] text-[11px] font-semibold cursor-pointer transition-colors flex items-center justify-center gap-1 text-center">
+                                    <UploadCloud className="w-3 h-3 shrink-0" />
+                                    <span>BEFORE Img</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (!file) return;
+                                        readImageFileAsDataUrl(
+                                          file,
+                                          (dataUrl) => {
+                                            setEditingMainMenuDraft({
+                                              ...editingMainMenuDraft,
+                                              beforeImageUrl: dataUrl,
+                                            });
+                                          }
+                                        );
+                                      }}
+                                      className="hidden"
+                                    />
+                                  </label>
+
+                                  <label className="py-1.5 px-2 rounded-lg bg-[#0088FF] hover:bg-[#001E5A] text-white text-[11px] font-semibold cursor-pointer transition-colors flex items-center justify-center gap-1 text-center">
+                                    <UploadCloud className="w-3 h-3 shrink-0" />
+                                    <span>AFTER Img</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (!file) return;
+                                        readImageFileAsDataUrl(
+                                          file,
+                                          (dataUrl) => {
+                                            setEditingMainMenuDraft({
+                                              ...editingMainMenuDraft,
+                                              afterImageUrl: dataUrl,
+                                            });
+                                          }
+                                        );
+                                      }}
+                                      className="hidden"
+                                    />
+                                  </label>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next = mainMenuServices.map((m) =>
+                                      m.id === editingMainMenuDraft.id
+                                        ? editingMainMenuDraft
+                                        : m
+                                    );
+                                    onUpdateMainMenuServices(next);
+                                    notifySaved(
+                                      `Saved & published "${editingMainMenuDraft.title}"!`
+                                    );
+                                    setEditingMainMenuDraft(null);
+                                  }}
+                                  className="w-full py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Save &amp; Publish</span>
+                                </button>
+                              </div>
+                            )
+                          )}
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -5163,359 +5401,563 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
              =================================================================== */}
           {activeTab === 'portfolio_before_after' && (
             <div className="space-y-8">
-              <form
-                onSubmit={handleAddNewPortfolioItem}
-                className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5 shadow-xs">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-4">
                   <div>
                     <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
-                      ADD NEW PORTFOLIO COMPARISON CARD
+                      PUBLISHED PORTFOLIO ITEMS ({portfolioItems.length} ACTIVE)
                     </p>
                     <h2 className="text-lg font-bold text-[#001E5A]">
-                      Upload New Before & After Images to Portfolio Page
+                      Portfolio Before &amp; After List — Click Edit Icon to Modify or &ldquo;+ Add New&rdquo; to Create
                     </h2>
                   </div>
-                  <span className="text-xs font-mono-tabular text-slate-500">
-                    Changes appear immediately on the Portfolio Page & Home Showcase
-                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowAddNewPortfolioForm((prev) => !prev)
+                    }
+                    className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 shadow-xs ${
+                      showAddNewPortfolioForm
+                        ? 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                        : 'bg-[#001E5A] hover:bg-[#0088FF] text-white'
+                    }`}
+                  >
+                    {showAddNewPortfolioForm ? (
+                      <>
+                        <X className="w-4 h-4" />
+                        <span>Close Add New Form</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        <span>+ Add New Portfolio Item</span>
+                      </>
+                    )}
+                  </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Portfolio Project Title *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={newPfTitle}
-                      onChange={(e) => setNewPfTitle(e.target.value)}
-                      placeholder="e.g., Diamond Ring Micro-Prong & Facet Retouch"
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Client / Brand Name
-                    </label>
-                    <input
-                      type="text"
-                      value={newPfBrand}
-                      onChange={(e) => setNewPfBrand(e.target.value)}
-                      placeholder="e.g., Aurelia Fine Jewelry"
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Service Category
-                    </label>
-                    <select
-                      value={newPfCategory}
-                      onChange={(e) =>
-                        setNewPfCategory(e.target.value as ServiceCategory)
-                      }
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
-                    >
-                      <option value="clipping_path">Clipping Path</option>
-                      <option value="ghost_mannequin">Ghost Mannequin</option>
-                      <option value="jewelry_retouch">Fine Jewelry</option>
-                      <option value="ecommerce_shadow">Product & Shadow</option>
-                      <option value="beauty_high_end">High-End Beauty</option>
-                      <option value="color_variants">Real Estate & Color</option>
-                    </select>
-                  </div>
-                </div>
+                {/* Collapsible "+ Add New Portfolio Item" Form */}
+                {showAddNewPortfolioForm && (
+                  <form
+                    onSubmit={handleAddNewPortfolioItem}
+                    className="p-6 rounded-2xl bg-[#F0F7FF] border border-[#0088FF] space-y-5"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-200 pb-3">
+                      <div>
+                        <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
+                          + ADD NEW PORTFOLIO COMPARISON CARD
+                        </p>
+                        <h3 className="text-base font-bold text-[#001E5A]">
+                          Upload New Before &amp; After Images to Portfolio Page
+                        </h3>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddNewPortfolioForm(false)}
+                        className="px-3 py-1 rounded-lg bg-white border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                      >
+                        Cancel
+                      </button>
+                    </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-2">
-                    <label className="block text-xs font-bold text-[#001E5A]">
-                      1. Upload BEFORE Image (Raw Capture)
-                    </label>
-                    <label className="flex items-center justify-between p-3 border border-dashed border-[#0088FF] rounded-lg bg-white cursor-pointer hover:bg-[#EAF3FC]/50">
-                      <span className="text-xs font-semibold text-[#001E5A] flex items-center gap-2">
-                        <UploadCloud className="w-4 h-4 text-[#0088FF]" />
-                        {newPfBeforeImg
-                          ? 'Before Image Loaded ✓ (Click to replace)'
-                          : 'Select Before Image (JPG/PNG/WebP)'}
-                      </span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) readImageFileAsDataUrl(f, setNewPfBeforeImg);
-                        }}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-
-                  <div className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-2">
-                    <label className="block text-xs font-bold text-[#001E5A]">
-                      2. Upload AFTER Image (Edited Master)
-                    </label>
-                    <label className="flex items-center justify-between p-3 border border-dashed border-[#0088FF] rounded-lg bg-white cursor-pointer hover:bg-[#EAF3FC]/50">
-                      <span className="text-xs font-semibold text-[#001E5A] flex items-center gap-2">
-                        <UploadCloud className="w-4 h-4 text-emerald-600" />
-                        {newPfAfterImg
-                          ? 'After Image Loaded ✓ (Click to replace)'
-                          : 'Select After Image (JPG/PNG/WebP)'}
-                      </span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) readImageFileAsDataUrl(f, setNewPfAfterImg);
-                        }}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Price Display
-                    </label>
-                    <input
-                      type="text"
-                      value={newPfPrice}
-                      onChange={(e) => setNewPfPrice(e.target.value)}
-                      className="w-full px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Turnaround SLA
-                    </label>
-                    <input
-                      type="text"
-                      value={newPfTurnaround}
-                      onChange={(e) => setNewPfTurnaround(e.target.value)}
-                      className="w-full px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      After Retouching Notes
-                    </label>
-                    <input
-                      type="text"
-                      value={newPfAfterNotes}
-                      onChange={(e) => setNewPfAfterNotes(e.target.value)}
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 text-xs font-semibold text-white bg-[#001E5A] hover:bg-[#0088FF] rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Publish New Before/After Item to Portfolio</span>
-                </button>
-              </form>
-
-              {/* Existing Portfolio Items Grid */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-bold text-[#001E5A]">
-                  Manage Existing Portfolio Items ({portfolioItems.length}) — Upload Custom Before & After Images
-                </h3>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {portfolioItems.map((item) => (
-                    <div
-                      key={item.id}
-                      className="bg-white border border-slate-200 rounded-2xl overflow-hidden flex flex-col justify-between"
-                    >
-                      <BeforeAfterStudioCanvas
-                        artworkType={item.artworkType}
-                        initialSplit={50}
-                        interactive={true}
-                        className="h-64"
-                        beforeImageUrl={item.beforeImageUrl}
-                        afterImageUrl={item.afterImageUrl}
-                      />
-
-                      <div className="p-5 space-y-4">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 space-y-2">
-                            <input
-                              type="text"
-                              value={item.title}
-                              onChange={(e) => {
-                                const next = portfolioItems.map((p) =>
-                                  p.id === item.id
-                                    ? { ...p, title: e.target.value }
-                                    : p
-                                );
-                                onUpdatePortfolioItems(next);
-                              }}
-                              placeholder="Portfolio Title"
-                              className="w-full px-2.5 py-1.5 text-sm font-bold text-[#001E5A] border border-slate-300 rounded-lg"
-                            />
-                            <div className="grid grid-cols-2 gap-2">
-                              <input
-                                type="text"
-                                value={item.clientBrand}
-                                onChange={(e) => {
-                                  const next = portfolioItems.map((p) =>
-                                    p.id === item.id
-                                      ? { ...p, clientBrand: e.target.value }
-                                      : p
-                                  );
-                                  onUpdatePortfolioItems(next);
-                                }}
-                                placeholder="Client Brand"
-                                className="px-2.5 py-1 text-xs text-slate-700 border border-slate-300 rounded-lg"
-                              />
-                              <select
-                                value={item.category}
-                                onChange={(e) => {
-                                  const cat = e.target.value as ServiceCategory;
-                                  const labelMap: Record<ServiceCategory, string> = {
-                                    clipping_path: 'Clipping Path',
-                                    ghost_mannequin: 'Ghost Mannequin',
-                                    jewelry_retouch: 'Fine Jewelry',
-                                    ecommerce_shadow: 'Product & Shadow',
-                                    beauty_high_end: 'High-End Beauty',
-                                    color_variants: 'Real Estate & Color',
-                                  };
-                                  const next = portfolioItems.map((p) =>
-                                    p.id === item.id
-                                      ? {
-                                          ...p,
-                                          category: cat,
-                                          categoryLabel: labelMap[cat] || p.categoryLabel,
-                                        }
-                                      : p
-                                  );
-                                  onUpdatePortfolioItems(next);
-                                }}
-                                className="px-2.5 py-1 text-xs bg-white border border-slate-300 rounded-lg"
-                              >
-                                <option value="clipping_path">Clipping Path</option>
-                                <option value="ghost_mannequin">Ghost Mannequin</option>
-                                <option value="jewelry_retouch">Fine Jewelry</option>
-                                <option value="ecommerce_shadow">Product & Shadow</option>
-                                <option value="beauty_high_end">High-End Beauty</option>
-                                <option value="color_variants">Real Estate & Color</option>
-                              </select>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <input
-                                type="text"
-                                value={item.pricePerImage}
-                                onChange={(e) => {
-                                  const next = portfolioItems.map((p) =>
-                                    p.id === item.id
-                                      ? { ...p, pricePerImage: e.target.value }
-                                      : p
-                                  );
-                                  onUpdatePortfolioItems(next);
-                                }}
-                                placeholder="Price (e.g. $0.39 / img)"
-                                className="px-2.5 py-1 text-xs font-mono-tabular text-[#0088FF] font-bold border border-slate-300 rounded-lg"
-                              />
-                              <input
-                                type="text"
-                                value={item.turnaround}
-                                onChange={(e) => {
-                                  const next = portfolioItems.map((p) =>
-                                    p.id === item.id
-                                      ? { ...p, turnaround: e.target.value }
-                                      : p
-                                  );
-                                  onUpdatePortfolioItems(next);
-                                }}
-                                placeholder="Turnaround SLA"
-                                className="px-2.5 py-1 text-xs font-mono-tabular text-slate-600 border border-slate-300 rounded-lg"
-                              />
-                            </div>
-                            <input
-                              type="text"
-                              value={item.afterNotes}
-                              onChange={(e) => {
-                                const next = portfolioItems.map((p) =>
-                                  p.id === item.id
-                                    ? { ...p, afterNotes: e.target.value }
-                                    : p
-                                );
-                                onUpdatePortfolioItems(next);
-                              }}
-                              placeholder="After Retouching Description / Notes"
-                              className="w-full px-2.5 py-1 text-xs text-slate-600 border border-slate-300 rounded-lg"
-                            />
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onUpdatePortfolioItems(
-                                portfolioItems.filter((p) => p.id !== item.id)
-                              );
-                              notifySaved(
-                                `Removed portfolio item "${item.title}".`
-                              );
-                            }}
-                            className="p-2 text-slate-400 hover:text-red-600"
-                            title="Delete Portfolio Item"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-200">
-                          <label className="py-2 px-3 rounded-lg bg-[#EAF3FC] hover:bg-[#001E5A] hover:text-white text-[#001E5A] text-xs font-semibold cursor-pointer transition-colors flex items-center justify-center gap-1.5 text-center">
-                            <UploadCloud className="w-3.5 h-3.5 shrink-0" />
-                            <span>
-                              {item.beforeImageUrl
-                                ? 'Replace BEFORE Image'
-                                : 'Upload BEFORE Image'}
-                            </span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) =>
-                                handlePortfolioImageUpload(
-                                  item.id,
-                                  'before',
-                                  e.target.files?.[0]
-                                )
-                              }
-                              className="hidden"
-                            />
-                          </label>
-
-                          <label className="py-2 px-3 rounded-lg bg-[#0088FF] hover:bg-[#001E5A] text-white text-xs font-semibold cursor-pointer transition-colors flex items-center justify-center gap-1.5 text-center">
-                            <UploadCloud className="w-3.5 h-3.5 shrink-0" />
-                            <span>
-                              {item.afterImageUrl
-                                ? 'Replace AFTER Image'
-                                : 'Upload AFTER Image'}
-                            </span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) =>
-                                handlePortfolioImageUpload(
-                                  item.id,
-                                  'after',
-                                  e.target.files?.[0]
-                                )
-                              }
-                              className="hidden"
-                            />
-                          </label>
-                        </div>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Portfolio Project Title *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={newPfTitle}
+                          onChange={(e) => setNewPfTitle(e.target.value)}
+                          placeholder="e.g., Diamond Ring Micro-Prong & Facet Retouch"
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Client / Brand Name
+                        </label>
+                        <input
+                          type="text"
+                          value={newPfBrand}
+                          onChange={(e) => setNewPfBrand(e.target.value)}
+                          placeholder="e.g., Aurelia Fine Jewelry"
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Service Category
+                        </label>
+                        <select
+                          value={newPfCategory}
+                          onChange={(e) =>
+                            setNewPfCategory(e.target.value as ServiceCategory)
+                          }
+                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white"
+                        >
+                          <option value="clipping_path">Clipping Path</option>
+                          <option value="ghost_mannequin">
+                            Ghost Mannequin
+                          </option>
+                          <option value="jewelry_retouch">Fine Jewelry</option>
+                          <option value="ecommerce_shadow">
+                            Product & Shadow
+                          </option>
+                          <option value="beauty_high_end">
+                            High-End Beauty
+                          </option>
+                          <option value="color_variants">
+                            Real Estate & Color
+                          </option>
+                        </select>
                       </div>
                     </div>
-                  ))}
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="p-4 rounded-xl bg-white border border-slate-200 space-y-2">
+                        <label className="block text-xs font-bold text-[#001E5A]">
+                          1. Upload BEFORE Image (Raw Capture)
+                        </label>
+                        <label className="flex items-center justify-between p-3 border border-dashed border-[#0088FF] rounded-lg bg-[#F8FAFC] cursor-pointer hover:bg-[#EAF3FC]/50">
+                          <span className="text-xs font-semibold text-[#001E5A] flex items-center gap-2">
+                            <UploadCloud className="w-4 h-4 text-[#0088FF]" />
+                            {newPfBeforeImg
+                              ? 'Before Image Loaded ✓ (Click to replace)'
+                              : 'Select Before Image (JPG/PNG/WebP)'}
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f)
+                                readImageFileAsDataUrl(f, setNewPfBeforeImg);
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="p-4 rounded-xl bg-white border border-slate-200 space-y-2">
+                        <label className="block text-xs font-bold text-[#001E5A]">
+                          2. Upload AFTER Image (Edited Master)
+                        </label>
+                        <label className="flex items-center justify-between p-3 border border-dashed border-[#0088FF] rounded-lg bg-[#F8FAFC] cursor-pointer hover:bg-[#EAF3FC]/50">
+                          <span className="text-xs font-semibold text-[#001E5A] flex items-center gap-2">
+                            <UploadCloud className="w-4 h-4 text-emerald-600" />
+                            {newPfAfterImg
+                              ? 'After Image Loaded ✓ (Click to replace)'
+                              : 'Select After Image (JPG/PNG/WebP)'}
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              if (f)
+                                readImageFileAsDataUrl(f, setNewPfAfterImg);
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Price Display
+                        </label>
+                        <input
+                          type="text"
+                          value={newPfPrice}
+                          onChange={(e) => setNewPfPrice(e.target.value)}
+                          className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Turnaround SLA
+                        </label>
+                        <input
+                          type="text"
+                          value={newPfTurnaround}
+                          onChange={(e) => setNewPfTurnaround(e.target.value)}
+                          className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          After Retouching Notes
+                        </label>
+                        <input
+                          type="text"
+                          value={newPfAfterNotes}
+                          onChange={(e) => setNewPfAfterNotes(e.target.value)}
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddNewPortfolioForm(false)}
+                        className="px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2.5 text-xs font-bold text-white bg-[#001E5A] hover:bg-[#0088FF] rounded-lg transition-colors flex items-center gap-2"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Publish New Portfolio Item</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Published Portfolio Items Grid (Read-Only Summary by Default, Click Edit Icon to Edit & Save) */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {portfolioItems.map((item) => {
+                    const isEditingPf = editingPortfolioDraft?.id === item.id;
+                    return (
+                      <div
+                        key={item.id}
+                        className={`rounded-2xl border overflow-hidden flex flex-col justify-between transition-all ${
+                          isEditingPf
+                            ? 'bg-blue-50/40 border-[#0088FF] shadow-md'
+                            : 'bg-[#F8FAFC] border-slate-200'
+                        }`}
+                      >
+                        <BeforeAfterStudioCanvas
+                          artworkType={item.artworkType}
+                          initialSplit={50}
+                          interactive={true}
+                          className="h-60"
+                          beforeImageUrl={
+                            isEditingPf
+                              ? editingPortfolioDraft.beforeImageUrl
+                              : item.beforeImageUrl
+                          }
+                          afterImageUrl={
+                            isEditingPf
+                              ? editingPortfolioDraft.afterImageUrl
+                              : item.afterImageUrl
+                          }
+                        />
+
+                        <div className="p-5 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <span className="inline-block px-2.5 py-0.5 rounded-full bg-blue-100 text-[#001E5A] font-mono-tabular text-[10px] font-bold mb-1">
+                                {item.categoryLabel}
+                              </span>
+                              <h3 className="text-base font-bold text-[#001E5A]">
+                                {item.title}
+                              </h3>
+                              <p className="text-xs text-slate-600">
+                                Client: <strong>{item.clientBrand}</strong> ·{' '}
+                                <span className="font-mono-tabular font-bold text-[#0088FF]">
+                                  {item.pricePerImage}
+                                </span>{' '}
+                                · {item.turnaround}
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {!isEditingPf ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setEditingPortfolioDraft({ ...item })
+                                  }
+                                  className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5"
+                                >
+                                  <Pencil className="w-3.5 h-3.5 text-[#0088FF]" />
+                                  <span>Edit</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setEditingPortfolioDraft(null)
+                                  }
+                                  className="px-3 py-1.5 rounded-lg bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                  <span>Cancel</span>
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onUpdatePortfolioItems(
+                                    portfolioItems.filter(
+                                      (p) => p.id !== item.id
+                                    )
+                                  );
+                                  if (isEditingPf) {
+                                    setEditingPortfolioDraft(null);
+                                  }
+                                  notifySaved(
+                                    `Removed portfolio item "${item.title}".`
+                                  );
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-red-600 bg-white border border-slate-200 rounded-lg"
+                                title="Delete Portfolio Item"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {!isEditingPf ? (
+                            <p className="text-xs text-slate-600 border-t border-slate-200 pt-2">
+                              {item.afterNotes}
+                            </p>
+                          ) : (
+                            editingPortfolioDraft && (
+                              <div className="space-y-3 pt-3 border-t border-blue-200 bg-white p-4 rounded-xl">
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                    Portfolio Title
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingPortfolioDraft.title}
+                                    onChange={(e) =>
+                                      setEditingPortfolioDraft({
+                                        ...editingPortfolioDraft,
+                                        title: e.target.value,
+                                      })
+                                    }
+                                    className="w-full px-3 py-1.5 text-xs font-bold text-[#001E5A] border border-slate-300 rounded-lg"
+                                  />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2.5">
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                      Client Brand
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={editingPortfolioDraft.clientBrand}
+                                      onChange={(e) =>
+                                        setEditingPortfolioDraft({
+                                          ...editingPortfolioDraft,
+                                          clientBrand: e.target.value,
+                                        })
+                                      }
+                                      className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                      Category
+                                    </label>
+                                    <select
+                                      value={editingPortfolioDraft.category}
+                                      onChange={(e) => {
+                                        const cat =
+                                          e.target.value as ServiceCategory;
+                                        const labelMap: Record<
+                                          ServiceCategory,
+                                          string
+                                        > = {
+                                          clipping_path: 'Clipping Path',
+                                          ghost_mannequin: 'Ghost Mannequin',
+                                          jewelry_retouch: 'Fine Jewelry',
+                                          ecommerce_shadow: 'Product & Shadow',
+                                          beauty_high_end: 'High-End Beauty',
+                                          color_variants:
+                                            'Real Estate & Color',
+                                        };
+                                        setEditingPortfolioDraft({
+                                          ...editingPortfolioDraft,
+                                          category: cat,
+                                          categoryLabel:
+                                            labelMap[cat] ||
+                                            editingPortfolioDraft.categoryLabel,
+                                        });
+                                      }}
+                                      className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
+                                    >
+                                      <option value="clipping_path">
+                                        Clipping Path
+                                      </option>
+                                      <option value="ghost_mannequin">
+                                        Ghost Mannequin
+                                      </option>
+                                      <option value="jewelry_retouch">
+                                        Fine Jewelry
+                                      </option>
+                                      <option value="ecommerce_shadow">
+                                        Product & Shadow
+                                      </option>
+                                      <option value="beauty_high_end">
+                                        High-End Beauty
+                                      </option>
+                                      <option value="color_variants">
+                                        Real Estate & Color
+                                      </option>
+                                    </select>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2.5">
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                      Price Display
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={
+                                        editingPortfolioDraft.pricePerImage
+                                      }
+                                      onChange={(e) =>
+                                        setEditingPortfolioDraft({
+                                          ...editingPortfolioDraft,
+                                          pricePerImage: e.target.value,
+                                        })
+                                      }
+                                      className="w-full px-2.5 py-1.5 text-xs font-mono-tabular font-bold text-[#0088FF] border border-slate-300 rounded-lg"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                      Turnaround SLA
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={editingPortfolioDraft.turnaround}
+                                      onChange={(e) =>
+                                        setEditingPortfolioDraft({
+                                          ...editingPortfolioDraft,
+                                          turnaround: e.target.value,
+                                        })
+                                      }
+                                      className="w-full px-2.5 py-1.5 text-xs font-mono-tabular border border-slate-300 rounded-lg"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                    After Retouching Notes
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingPortfolioDraft.afterNotes}
+                                    onChange={(e) =>
+                                      setEditingPortfolioDraft({
+                                        ...editingPortfolioDraft,
+                                        afterNotes: e.target.value,
+                                      })
+                                    }
+                                    className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg"
+                                  />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2.5 pt-1">
+                                  <label className="py-2 px-3 rounded-lg bg-[#EAF3FC] hover:bg-[#001E5A] hover:text-white text-[#001E5A] text-xs font-semibold cursor-pointer transition-colors flex items-center justify-center gap-1.5 text-center">
+                                    <UploadCloud className="w-3.5 h-3.5 shrink-0" />
+                                    <span>
+                                      {editingPortfolioDraft.beforeImageUrl
+                                        ? 'Replace BEFORE Img'
+                                        : 'Upload BEFORE Img'}
+                                    </span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (!file) return;
+                                        readImageFileAsDataUrl(
+                                          file,
+                                          (dataUrl) => {
+                                            setEditingPortfolioDraft({
+                                              ...editingPortfolioDraft,
+                                              beforeImageUrl: dataUrl,
+                                            });
+                                          }
+                                        );
+                                      }}
+                                      className="hidden"
+                                    />
+                                  </label>
+
+                                  <label className="py-2 px-3 rounded-lg bg-[#0088FF] hover:bg-[#001E5A] text-white text-xs font-semibold cursor-pointer transition-colors flex items-center justify-center gap-1.5 text-center">
+                                    <UploadCloud className="w-3.5 h-3.5 shrink-0" />
+                                    <span>
+                                      {editingPortfolioDraft.afterImageUrl
+                                        ? 'Replace AFTER Img'
+                                        : 'Upload AFTER Img'}
+                                    </span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (!file) return;
+                                        readImageFileAsDataUrl(
+                                          file,
+                                          (dataUrl) => {
+                                            setEditingPortfolioDraft({
+                                              ...editingPortfolioDraft,
+                                              afterImageUrl: dataUrl,
+                                            });
+                                          }
+                                        );
+                                      }}
+                                      className="hidden"
+                                    />
+                                  </label>
+                                </div>
+
+                                <div className="flex items-center justify-end gap-2 pt-2">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setEditingPortfolioDraft(null)
+                                    }
+                                    className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const next = portfolioItems.map((p) =>
+                                        p.id === editingPortfolioDraft.id
+                                          ? editingPortfolioDraft
+                                          : p
+                                      );
+                                      onUpdatePortfolioItems(next);
+                                      notifySaved(
+                                        `Saved & published updates to portfolio item "${editingPortfolioDraft.title}"!`
+                                      );
+                                      setEditingPortfolioDraft(null);
+                                    }}
+                                    className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors flex items-center gap-1.5"
+                                  >
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    <span>Save &amp; Publish Update</span>
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -5526,316 +5968,470 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
              =================================================================== */}
           {activeTab === 'video_studio_showreel' && (
             <div className="space-y-8">
-              <form
-                onSubmit={handleAddVideoShowreel}
-                className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4"
-              >
-                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5 shadow-xs">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
                   <div>
                     <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
-                      VIDEO PORTFOLIO & NLE SHOWREEL MANAGER
+                      VIDEO PORTFOLIO &amp; NLE SHOWREEL MANAGER
                     </p>
                     <h2 className="text-lg font-bold text-[#001E5A]">
-                      Add New Video Portfolio Project (Shown on Portfolio & Video Studio Pages)
+                      Published Video Portfolio Projects ({videoShowreelProjects.length} Active)
                     </h2>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Click <strong>Edit</strong> on any video project to modify its details and click <strong>Save &amp; Publish Update</strong>, or click <strong>+ Add New Video Project</strong> to publish a new showreel item.
+                    </p>
                   </div>
-                  <Film className="w-5 h-5 text-[#0088FF]" />
+
+                  <button
+                    type="button"
+                    onClick={() => setShowAddNewVideoForm((prev) => !prev)}
+                    className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 ${
+                      showAddNewVideoForm
+                        ? 'bg-slate-200 text-slate-700'
+                        : 'bg-[#001E5A] hover:bg-[#0088FF] text-white'
+                    }`}
+                  >
+                    {showAddNewVideoForm ? (
+                      <>
+                        <X className="w-4 h-4" />
+                        <span>Close Add New Form</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        <span>+ Add New Video Project</span>
+                      </>
+                    )}
+                  </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Video Project Title *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={newVidTitle}
-                      onChange={(e) => setNewVidTitle(e.target.value)}
-                      placeholder="e.g., Luxury Perfume 360° Rig Removal & Grade"
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Client / Studio Brand
-                    </label>
-                    <input
-                      type="text"
-                      value={newVidClient}
-                      onChange={(e) => setNewVidClient(e.target.value)}
-                      placeholder="e.g., Maison Lumière Paris"
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Video Track Category
-                    </label>
-                    <select
-                      value={newVidCategory}
-                      onChange={(e) =>
-                        setNewVidCategory(
-                          e.target.value as VideoShowreelProject['category']
-                        )
-                      }
-                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                    >
-                      <option value="ecommerce_product">
-                        E-Commerce Product Video
-                      </option>
-                      <option value="social_reels">
-                        Reels, TikTok & Shorts
-                      </option>
-                      <option value="real_estate_drone">
-                        Real Estate & Drone Tour
-                      </option>
-                      <option value="wedding_cinema">
-                        Wedding & Event Cinema
-                      </option>
-                      <option value="color_vfx">
-                        Color Grading & Roto VFX
-                      </option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                  <input
-                    type="text"
-                    value={newVidDuration}
-                    onChange={(e) => setNewVidDuration(e.target.value)}
-                    placeholder="Duration (00:45)"
-                    className="px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg"
-                  />
-                  <input
-                    type="text"
-                    value={newVidPrice}
-                    onChange={(e) => setNewVidPrice(e.target.value)}
-                    placeholder="Rate ($55 / video)"
-                    className="px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg"
-                  />
-                  <input
-                    type="text"
-                    value={newVidTurnaround}
-                    onChange={(e) => setNewVidTurnaround(e.target.value)}
-                    placeholder="SLA (24h SLA)"
-                    className="px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg"
-                  />
-                  <input
-                    type="text"
-                    value={newVidOutcome}
-                    onChange={(e) => setNewVidOutcome(e.target.value)}
-                    placeholder="Outcome (+38% Video Ad ROAS)"
-                    className="px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 text-xs font-semibold text-white bg-[#001E5A] hover:bg-[#0088FF] rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Project to Video Portfolio & Showreel</span>
-                </button>
-              </form>
-
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
-                <h3 className="text-lg font-bold text-[#001E5A]">
-                  Edit Existing Video Portfolio Projects ({videoShowreelProjects.length}) — Full Admin Control
-                </h3>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                  {videoShowreelProjects.map((proj) => (
-                    <div
-                      key={proj.id}
-                      className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-3"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <select
-                          value={proj.category}
-                          onChange={(e) => {
-                            const cat = e.target.value as VideoShowreelProject['category'];
-                            const labelMap: Record<VideoShowreelProject['category'], string> = {
-                              ecommerce_product: 'E-Commerce Product Video',
-                              social_reels: 'Reels, TikTok & Shorts',
-                              real_estate_drone: 'Real Estate & Drone Video',
-                              wedding_cinema: 'Wedding & Event Cinema',
-                              color_vfx: 'Color Grading, Roto & VFX',
-                            };
-                            const next = videoShowreelProjects.map((v) =>
-                              v.id === proj.id
-                                ? {
-                                    ...v,
-                                    category: cat,
-                                    categoryLabel: labelMap[cat] || v.categoryLabel,
-                                  }
-                                : v
-                            );
-                            onUpdateVideoShowreelProjects(next);
-                          }}
-                          className="px-2.5 py-1 text-xs font-bold text-[#0088FF] bg-white border border-slate-300 rounded"
-                        >
-                          <option value="ecommerce_product">E-Commerce Product Video</option>
-                          <option value="social_reels">Reels, TikTok & Shorts</option>
-                          <option value="real_estate_drone">Real Estate & Drone Video</option>
-                          <option value="wedding_cinema">Wedding & Event Cinema</option>
-                          <option value="color_vfx">Color Grading, Roto & VFX</option>
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            onUpdateVideoShowreelProjects(
-                              videoShowreelProjects.filter(
-                                (v) => v.id !== proj.id
-                              )
-                            );
-                            notifySaved(
-                              `Removed video project "${proj.title}".`
-                            );
-                          }}
-                          className="text-slate-400 hover:text-red-600 p-1"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                {showAddNewVideoForm && (
+                  <form
+                    onSubmit={handleAddVideoShowreel}
+                    className="bg-[#F8FAFC] border border-[#0088FF] rounded-2xl p-6 space-y-4"
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                      <div>
+                        <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
+                          + CREATE NEW VIDEO PORTFOLIO PROJECT
+                        </p>
+                        <h3 className="text-base font-bold text-[#001E5A]">
+                          Add New Video Portfolio Project (Shown on Portfolio &amp; Video Studio Pages)
+                        </h3>
                       </div>
+                      <Film className="w-5 h-5 text-[#0088FF]" />
+                    </div>
 
-                      <input
-                        type="text"
-                        value={proj.title}
-                        onChange={(e) => {
-                          const next = videoShowreelProjects.map((v) =>
-                            v.id === proj.id
-                              ? { ...v, title: e.target.value }
-                              : v
-                          );
-                          onUpdateVideoShowreelProjects(next);
-                        }}
-                        placeholder="Video Project Title"
-                        className="w-full px-2.5 py-1.5 text-xs font-bold text-[#001E5A] bg-white border border-slate-300 rounded"
-                      />
-
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        <input
-                          type="text"
-                          value={proj.clientBrand}
-                          onChange={(e) => {
-                            const next = videoShowreelProjects.map((v) =>
-                              v.id === proj.id
-                                ? { ...v, clientBrand: e.target.value }
-                                : v
-                            );
-                            onUpdateVideoShowreelProjects(next);
-                          }}
-                          placeholder="Client Brand"
-                          className="px-2.5 py-1 text-xs bg-white border border-slate-300 rounded"
-                        />
-                        <input
-                          type="text"
-                          value={proj.duration}
-                          onChange={(e) => {
-                            const next = videoShowreelProjects.map((v) =>
-                              v.id === proj.id
-                                ? { ...v, duration: e.target.value }
-                                : v
-                            );
-                            onUpdateVideoShowreelProjects(next);
-                          }}
-                          placeholder="Duration"
-                          className="px-2.5 py-1 text-xs font-mono-tabular bg-white border border-slate-300 rounded"
-                        />
-                        <input
-                          type="text"
-                          value={proj.turnaround}
-                          onChange={(e) => {
-                            const next = videoShowreelProjects.map((v) =>
-                              v.id === proj.id
-                                ? { ...v, turnaround: e.target.value }
-                                : v
-                            );
-                            onUpdateVideoShowreelProjects(next);
-                          }}
-                          placeholder="Turnaround SLA"
-                          className="px-2.5 py-1 text-xs font-mono-tabular bg-white border border-slate-300 rounded"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        <input
-                          type="text"
-                          value={proj.priceLabel}
-                          onChange={(e) => {
-                            const next = videoShowreelProjects.map((v) =>
-                              v.id === proj.id
-                                ? { ...v, priceLabel: e.target.value }
-                                : v
-                            );
-                            onUpdateVideoShowreelProjects(next);
-                          }}
-                          placeholder="Price Label"
-                          className="px-2.5 py-1 text-xs font-mono-tabular font-bold text-[#0088FF] bg-white border border-slate-300 rounded"
-                        />
-                        <input
-                          type="text"
-                          value={proj.outcomeMetric}
-                          onChange={(e) => {
-                            const next = videoShowreelProjects.map((v) =>
-                              v.id === proj.id
-                                ? { ...v, outcomeMetric: e.target.value }
-                                : v
-                            );
-                            onUpdateVideoShowreelProjects(next);
-                          }}
-                          placeholder="Outcome Metric"
-                          className="px-2.5 py-1 text-xs font-mono-tabular text-emerald-700 bg-white border border-slate-300 rounded"
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <input
-                          type="text"
-                          value={proj.videoPreviewUrl || ''}
-                          onChange={(e) => {
-                            const next = videoShowreelProjects.map((v) =>
-                              v.id === proj.id
-                                ? { ...v, videoPreviewUrl: e.target.value }
-                                : v
-                            );
-                            onUpdateVideoShowreelProjects(next);
-                          }}
-                          placeholder="MP4 Video URL (Optional)"
-                          className="px-2.5 py-1 text-xs font-mono-tabular bg-white border border-slate-300 rounded"
-                        />
-                        <label className="py-1.5 px-3 rounded bg-[#EAF3FC] hover:bg-[#001E5A] hover:text-white text-[#001E5A] text-xs font-semibold cursor-pointer transition-colors flex items-center justify-center gap-1.5 text-center">
-                          <UploadCloud className="w-3.5 h-3.5 shrink-0" />
-                          <span>
-                            {proj.thumbnailImageUrl
-                              ? 'Replace Video Thumbnail'
-                              : 'Upload Video Thumbnail'}
-                          </span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => {
-                              const f = e.target.files?.[0];
-                              if (!f) return;
-                              readImageFileAsDataUrl(f, (dataUrl) => {
-                                const next = videoShowreelProjects.map((v) =>
-                                  v.id === proj.id
-                                    ? { ...v, thumbnailImageUrl: dataUrl }
-                                    : v
-                                );
-                                onUpdateVideoShowreelProjects(next);
-                                notifySaved(
-                                  `Uploaded thumbnail for "${proj.title}"!`
-                                );
-                              });
-                            }}
-                            className="hidden"
-                          />
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Video Project Title *
                         </label>
+                        <input
+                          type="text"
+                          required
+                          value={newVidTitle}
+                          onChange={(e) => setNewVidTitle(e.target.value)}
+                          placeholder="e.g., Luxury Perfume 360° Rig Removal & Grade"
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Client / Studio Brand
+                        </label>
+                        <input
+                          type="text"
+                          value={newVidClient}
+                          onChange={(e) => setNewVidClient(e.target.value)}
+                          placeholder="e.g., Maison Lumière Paris"
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Video Track Category
+                        </label>
+                        <select
+                          value={newVidCategory}
+                          onChange={(e) =>
+                            setNewVidCategory(
+                              e.target.value as VideoShowreelProject['category']
+                            )
+                          }
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                        >
+                          <option value="ecommerce_product">
+                            E-Commerce Product Video
+                          </option>
+                          <option value="social_reels">
+                            Reels, TikTok &amp; Shorts
+                          </option>
+                          <option value="real_estate_drone">
+                            Real Estate &amp; Drone Tour
+                          </option>
+                          <option value="wedding_cinema">
+                            Wedding &amp; Event Cinema
+                          </option>
+                          <option value="color_vfx">
+                            Color Grading &amp; Roto VFX
+                          </option>
+                        </select>
                       </div>
                     </div>
-                  ))}
+
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      <input
+                        type="text"
+                        value={newVidDuration}
+                        onChange={(e) => setNewVidDuration(e.target.value)}
+                        placeholder="Duration (00:45)"
+                        className="px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                      />
+                      <input
+                        type="text"
+                        value={newVidPrice}
+                        onChange={(e) => setNewVidPrice(e.target.value)}
+                        placeholder="Rate ($55 / video)"
+                        className="px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                      />
+                      <input
+                        type="text"
+                        value={newVidTurnaround}
+                        onChange={(e) => setNewVidTurnaround(e.target.value)}
+                        placeholder="SLA (24h SLA)"
+                        className="px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                      />
+                      <input
+                        type="text"
+                        value={newVidOutcome}
+                        onChange={(e) => setNewVidOutcome(e.target.value)}
+                        placeholder="Outcome (+38% Video Ad ROAS)"
+                        className="px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddNewVideoForm(false)}
+                        className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2.5 text-xs font-semibold text-white bg-[#001E5A] hover:bg-[#0088FF] rounded-lg transition-colors flex items-center gap-2"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Publish Video Project</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Published Video Projects List (Read-Only by default, Click Edit Icon to Edit & Save) */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  {videoShowreelProjects.map((proj) => {
+                    const isEditingVid = editingVideoDraft?.id === proj.id;
+                    return (
+                      <div
+                        key={proj.id}
+                        className={`p-5 rounded-xl border space-y-3 transition-all ${
+                          isEditingVid
+                            ? 'bg-blue-50/40 border-[#0088FF] shadow-xs'
+                            : 'bg-[#F8FAFC] border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <span className="inline-block px-2.5 py-0.5 rounded-full bg-blue-100 text-[#001E5A] font-mono-tabular text-[10px] font-bold mb-1">
+                              {proj.categoryLabel}
+                            </span>
+                            <h3 className="text-base font-bold text-[#001E5A]">
+                              {proj.title}
+                            </h3>
+                            <p className="text-xs text-slate-600 mt-0.5">
+                              Client: <strong>{proj.clientBrand}</strong> ·{' '}
+                              <span className="font-mono-tabular font-bold text-[#0088FF]">
+                                {proj.priceLabel}
+                              </span>{' '}
+                              · {proj.duration} · {proj.turnaround}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {!isEditingVid ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditingVideoDraft({ ...proj })
+                                }
+                                className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5"
+                              >
+                                <Pencil className="w-3.5 h-3.5 text-[#0088FF]" />
+                                <span>Edit</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setEditingVideoDraft(null)}
+                                className="px-3 py-1.5 rounded-lg bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>Cancel</span>
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onUpdateVideoShowreelProjects(
+                                  videoShowreelProjects.filter(
+                                    (v) => v.id !== proj.id
+                                  )
+                                );
+                                if (isEditingVid) {
+                                  setEditingVideoDraft(null);
+                                }
+                                notifySaved(
+                                  `Removed video project "${proj.title}".`
+                                );
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-red-600 bg-white border border-slate-200 rounded-lg"
+                              title="Delete Video Project"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {!isEditingVid ? (
+                          <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
+                            <span className="font-mono-tabular text-emerald-700 font-semibold">
+                              Outcome: {proj.outcomeMetric}
+                            </span>
+                            {proj.thumbnailImageUrl && (
+                              <span className="text-[11px] font-mono-tabular text-[#0088FF]">
+                                Custom Thumbnail ✓
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          editingVideoDraft && (
+                            <div className="space-y-3 pt-3 border-t border-blue-200 bg-white p-4 rounded-xl">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                    Video Project Title
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingVideoDraft.title}
+                                    onChange={(e) =>
+                                      setEditingVideoDraft({
+                                        ...editingVideoDraft,
+                                        title: e.target.value,
+                                      })
+                                    }
+                                    className="w-full px-2.5 py-1.5 text-xs font-bold text-[#001E5A] border border-slate-300 rounded-lg"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                    Video Track Category
+                                  </label>
+                                  <select
+                                    value={editingVideoDraft.category}
+                                    onChange={(e) => {
+                                      const cat =
+                                        e.target
+                                          .value as VideoShowreelProject['category'];
+                                      const labelMap: Record<
+                                        VideoShowreelProject['category'],
+                                        string
+                                      > = {
+                                        ecommerce_product:
+                                          'E-Commerce Product Video',
+                                        social_reels:
+                                          'Reels, TikTok & Shorts',
+                                        real_estate_drone:
+                                          'Real Estate & Drone Video',
+                                        wedding_cinema:
+                                          'Wedding & Event Cinema',
+                                        color_vfx:
+                                          'Color Grading, Roto & VFX',
+                                      };
+                                      setEditingVideoDraft({
+                                        ...editingVideoDraft,
+                                        category: cat,
+                                        categoryLabel:
+                                          labelMap[cat] ||
+                                          editingVideoDraft.categoryLabel,
+                                      });
+                                    }}
+                                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
+                                  >
+                                    <option value="ecommerce_product">
+                                      E-Commerce Product Video
+                                    </option>
+                                    <option value="social_reels">
+                                      Reels, TikTok &amp; Shorts
+                                    </option>
+                                    <option value="real_estate_drone">
+                                      Real Estate &amp; Drone Video
+                                    </option>
+                                    <option value="wedding_cinema">
+                                      Wedding &amp; Event Cinema
+                                    </option>
+                                    <option value="color_vfx">
+                                      Color Grading, Roto &amp; VFX
+                                    </option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-2">
+                                <input
+                                  type="text"
+                                  value={editingVideoDraft.clientBrand}
+                                  onChange={(e) =>
+                                    setEditingVideoDraft({
+                                      ...editingVideoDraft,
+                                      clientBrand: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Client Brand"
+                                  className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg"
+                                />
+                                <input
+                                  type="text"
+                                  value={editingVideoDraft.duration}
+                                  onChange={(e) =>
+                                    setEditingVideoDraft({
+                                      ...editingVideoDraft,
+                                      duration: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Duration"
+                                  className="px-2.5 py-1.5 text-xs font-mono-tabular border border-slate-300 rounded-lg"
+                                />
+                                <input
+                                  type="text"
+                                  value={editingVideoDraft.turnaround}
+                                  onChange={(e) =>
+                                    setEditingVideoDraft({
+                                      ...editingVideoDraft,
+                                      turnaround: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Turnaround SLA"
+                                  className="px-2.5 py-1.5 text-xs font-mono-tabular border border-slate-300 rounded-lg"
+                                />
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2">
+                                <input
+                                  type="text"
+                                  value={editingVideoDraft.priceLabel}
+                                  onChange={(e) =>
+                                    setEditingVideoDraft({
+                                      ...editingVideoDraft,
+                                      priceLabel: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Price Label"
+                                  className="px-2.5 py-1.5 text-xs font-mono-tabular font-bold text-[#0088FF] border border-slate-300 rounded-lg"
+                                />
+                                <input
+                                  type="text"
+                                  value={editingVideoDraft.outcomeMetric}
+                                  onChange={(e) =>
+                                    setEditingVideoDraft({
+                                      ...editingVideoDraft,
+                                      outcomeMetric: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Outcome Metric"
+                                  className="px-2.5 py-1.5 text-xs font-mono-tabular text-emerald-700 border border-slate-300 rounded-lg"
+                                />
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <input
+                                  type="text"
+                                  value={
+                                    editingVideoDraft.videoPreviewUrl || ''
+                                  }
+                                  onChange={(e) =>
+                                    setEditingVideoDraft({
+                                      ...editingVideoDraft,
+                                      videoPreviewUrl: e.target.value,
+                                    })
+                                  }
+                                  placeholder="MP4 Video URL (Optional)"
+                                  className="px-2.5 py-1.5 text-xs font-mono-tabular border border-slate-300 rounded-lg"
+                                />
+                                <label className="py-1.5 px-3 rounded-lg bg-[#EAF3FC] hover:bg-[#001E5A] hover:text-white text-[#001E5A] text-xs font-semibold cursor-pointer transition-colors flex items-center justify-center gap-1.5 text-center">
+                                  <UploadCloud className="w-3.5 h-3.5 shrink-0" />
+                                  <span>
+                                    {editingVideoDraft.thumbnailImageUrl
+                                      ? 'Replace Video Thumbnail'
+                                      : 'Upload Video Thumbnail'}
+                                  </span>
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => {
+                                      const f = e.target.files?.[0];
+                                      if (!f) return;
+                                      readImageFileAsDataUrl(f, (dataUrl) => {
+                                        setEditingVideoDraft({
+                                          ...editingVideoDraft,
+                                          thumbnailImageUrl: dataUrl,
+                                        });
+                                      });
+                                    }}
+                                    className="hidden"
+                                  />
+                                </label>
+                              </div>
+
+                              <div className="flex items-center justify-end gap-2 pt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingVideoDraft(null)}
+                                  className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next = videoShowreelProjects.map(
+                                      (v) =>
+                                        v.id === editingVideoDraft.id
+                                          ? editingVideoDraft
+                                          : v
+                                    );
+                                    onUpdateVideoShowreelProjects(next);
+                                    notifySaved(
+                                      `Saved & published updates to video project "${editingVideoDraft.title}"!`
+                                    );
+                                    setEditingVideoDraft(null);
+                                  }}
+                                  className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors flex items-center gap-1.5"
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  <span>Save &amp; Publish Update</span>
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -5846,161 +6442,378 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
              =================================================================== */}
           {activeTab === 'reviews_carousel' && (
             <div className="space-y-8">
-              <form
-                onSubmit={handleAddCustomerReview}
-                className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4"
-              >
-                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5 shadow-xs">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
                   <div>
                     <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
-                      + ADD VERIFIED CLIENT REVIEW
+                      CLIENT TESTIMONIALS &amp; 3-CARD REVIEW CAROUSEL CMS
                     </p>
                     <h2 className="text-lg font-bold text-[#001E5A]">
-                      Publish New Review to the 3-Card Customer Review Carousel
+                      Published Client Reviews ({customerReviews.length} Active)
                     </h2>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Click <strong>Edit</strong> on any review to modify it and click <strong>Save &amp; Publish Update</strong>, or click <strong>+ Add New Client Review</strong> to publish a new testimonial.
+                    </p>
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                  <input
-                    type="text"
-                    required
-                    value={revClientName}
-                    onChange={(e) => setRevClientName(e.target.value)}
-                    placeholder="Client Name *"
-                    className="px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                  />
-                  <input
-                    type="text"
-                    value={revRole}
-                    onChange={(e) => setRevRole(e.target.value)}
-                    placeholder="Role (e.g., Head of Studio)"
-                    className="px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                  />
-                  <input
-                    type="text"
-                    value={revCompany}
-                    onChange={(e) => setRevCompany(e.target.value)}
-                    placeholder="Company / Brand"
-                    className="px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                  />
-                  <select
-                    value={revCategory}
-                    onChange={(e) =>
-                      setRevCategory(e.target.value as ServiceCategory)
-                    }
-                    className="px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                  <button
+                    type="button"
+                    onClick={() => setShowAddNewReviewForm((prev) => !prev)}
+                    className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 ${
+                      showAddNewReviewForm
+                        ? 'bg-slate-200 text-slate-700'
+                        : 'bg-[#001E5A] hover:bg-[#0088FF] text-white'
+                    }`}
                   >
-                    <option value="clipping_path">Clipping Path</option>
-                    <option value="ghost_mannequin">Ghost Mannequin</option>
-                    <option value="jewelry_retouch">Jewelry Retouching</option>
-                    <option value="beauty_high_end">Photo Retouching</option>
-                    <option value="ecommerce_shadow">E-Commerce Ready</option>
-                    <option value="color_variants">Real Estate & Color</option>
-                  </select>
+                    {showAddNewReviewForm ? (
+                      <>
+                        <X className="w-4 h-4" />
+                        <span>Close Add New Form</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        <span>+ Add New Client Review</span>
+                      </>
+                    )}
+                  </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <input
-                    type="text"
-                    required
-                    value={revHeadline}
-                    onChange={(e) => setRevHeadline(e.target.value)}
-                    placeholder="Review Headline *"
-                    className="px-3 py-2 text-xs border border-slate-300 rounded-lg font-semibold"
-                  />
-                  <input
-                    type="text"
-                    value={revOutcome}
-                    onChange={(e) => setRevOutcome(e.target.value)}
-                    placeholder="Measurable Result (e.g., Saved 18 hours per catalog shoot)"
-                    className="px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                  />
-                </div>
-
-                <textarea
-                  rows={2}
-                  required
-                  value={revQuote}
-                  onChange={(e) => setRevQuote(e.target.value)}
-                  placeholder="Detailed client review quote *"
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                />
-
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 text-xs font-semibold text-white bg-[#001E5A] hover:bg-[#0088FF] rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add Review to 3-Card Carousel</span>
-                </button>
-              </form>
-
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4">
-                <h2 className="text-lg font-bold text-[#001E5A] border-b border-slate-200 pb-3">
-                  Manage Existing 3-Card Carousel Reviews ({customerReviews.length} Active)
-                </h2>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {customerReviews.map((rev) => (
-                    <div
-                      key={rev.id}
-                      className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <input
-                          type="text"
-                          value={rev.clientName}
-                          onChange={(e) => {
-                            const next = customerReviews.map((r) =>
-                              r.id === rev.id
-                                ? { ...r, clientName: e.target.value }
-                                : r
-                            );
-                            onUpdateCustomerReviews(next);
-                          }}
-                          className="px-2.5 py-1 text-xs font-bold text-[#001E5A] bg-white border border-slate-300 rounded"
-                        />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onUpdateCustomerReviews(
-                              customerReviews.filter((r) => r.id !== rev.id)
-                            )
-                          }
-                          className="text-slate-400 hover:text-red-600 p-1"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                {showAddNewReviewForm && (
+                  <form
+                    onSubmit={handleAddCustomerReview}
+                    className="bg-[#F8FAFC] border border-[#0088FF] rounded-2xl p-6 space-y-4"
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                      <div>
+                        <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
+                          + ADD VERIFIED CLIENT REVIEW
+                        </p>
+                        <h3 className="text-base font-bold text-[#001E5A]">
+                          Publish New Review to the 3-Card Customer Review Carousel
+                        </h3>
                       </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                       <input
                         type="text"
-                        value={rev.headline}
-                        onChange={(e) => {
-                          const next = customerReviews.map((r) =>
-                            r.id === rev.id
-                              ? { ...r, headline: e.target.value }
-                              : r
-                          );
-                          onUpdateCustomerReviews(next);
-                        }}
-                        className="w-full px-2.5 py-1 text-xs font-semibold text-[#001E5A] bg-white border border-slate-300 rounded"
+                        required
+                        value={revClientName}
+                        onChange={(e) => setRevClientName(e.target.value)}
+                        placeholder="Client Name *"
+                        className="px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
                       />
-                      <textarea
-                        rows={2}
-                        value={rev.quote}
-                        onChange={(e) => {
-                          const next = customerReviews.map((r) =>
-                            r.id === rev.id
-                              ? { ...r, quote: e.target.value }
-                              : r
-                          );
-                          onUpdateCustomerReviews(next);
-                        }}
-                        className="w-full px-2.5 py-1 text-xs text-slate-600 bg-white border border-slate-300 rounded"
+                      <input
+                        type="text"
+                        value={revRole}
+                        onChange={(e) => setRevRole(e.target.value)}
+                        placeholder="Role (e.g., Head of Studio)"
+                        className="px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                      />
+                      <input
+                        type="text"
+                        value={revCompany}
+                        onChange={(e) => setRevCompany(e.target.value)}
+                        placeholder="Company / Brand"
+                        className="px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                      />
+                      <select
+                        value={revCategory}
+                        onChange={(e) =>
+                          setRevCategory(e.target.value as ServiceCategory)
+                        }
+                        className="px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                      >
+                        <option value="clipping_path">Clipping Path</option>
+                        <option value="ghost_mannequin">Ghost Mannequin</option>
+                        <option value="jewelry_retouch">
+                          Jewelry Retouching
+                        </option>
+                        <option value="beauty_high_end">
+                          Photo Retouching
+                        </option>
+                        <option value="ecommerce_shadow">
+                          E-Commerce Ready
+                        </option>
+                        <option value="color_variants">
+                          Real Estate &amp; Color
+                        </option>
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <input
+                        type="text"
+                        required
+                        value={revHeadline}
+                        onChange={(e) => setRevHeadline(e.target.value)}
+                        placeholder="Review Headline *"
+                        className="px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg font-semibold"
+                      />
+                      <input
+                        type="text"
+                        value={revOutcome}
+                        onChange={(e) => setRevOutcome(e.target.value)}
+                        placeholder="Measurable Result (e.g., Saved 18 hours per catalog shoot)"
+                        className="px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
                       />
                     </div>
-                  ))}
+
+                    <textarea
+                      rows={2}
+                      required
+                      value={revQuote}
+                      onChange={(e) => setRevQuote(e.target.value)}
+                      placeholder="Detailed client review quote *"
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                    />
+
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddNewReviewForm(false)}
+                        className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2.5 text-xs font-semibold text-white bg-[#001E5A] hover:bg-[#0088FF] rounded-lg transition-colors flex items-center gap-2"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Publish Review</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Published Client Reviews List (Read-Only by default, Click Edit Icon to Edit & Save) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {customerReviews.map((rev) => {
+                    const isEditingRev = editingReviewDraft?.id === rev.id;
+                    return (
+                      <div
+                        key={rev.id}
+                        className={`p-5 rounded-xl border space-y-3 transition-all ${
+                          isEditingRev
+                            ? 'bg-blue-50/40 border-[#0088FF] shadow-xs'
+                            : 'bg-[#F8FAFC] border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold text-[#001E5A]">
+                                {rev.clientName}
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-mono-tabular font-bold">
+                                ★ 5.0 VERIFIED
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-500">
+                              {rev.role} · <strong>{rev.company}</strong>
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {!isEditingRev ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditingReviewDraft({ ...rev })
+                                }
+                                className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5"
+                              >
+                                <Pencil className="w-3.5 h-3.5 text-[#0088FF]" />
+                                <span>Edit</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setEditingReviewDraft(null)}
+                                className="px-3 py-1.5 rounded-lg bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>Cancel</span>
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onUpdateCustomerReviews(
+                                  customerReviews.filter((r) => r.id !== rev.id)
+                                );
+                                if (isEditingRev) {
+                                  setEditingReviewDraft(null);
+                                }
+                                notifySaved(
+                                  `Removed review from "${rev.clientName}".`
+                                );
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-red-600 bg-white border border-slate-200 rounded-lg"
+                              title="Delete Review"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {!isEditingRev ? (
+                          <div className="space-y-1.5 pt-2 border-t border-slate-200">
+                            <p className="text-xs font-bold text-[#001E5A]">
+                              &ldquo;{rev.headline}&rdquo;
+                            </p>
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              {rev.quote}
+                            </p>
+                            {rev.measurableResult && (
+                              <p className="text-[11px] font-mono-tabular text-emerald-700 font-semibold pt-1">
+                                Result: {rev.measurableResult}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          editingReviewDraft && (
+                            <div className="space-y-3 pt-3 border-t border-blue-200 bg-white p-4 rounded-xl">
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                    Client Name
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingReviewDraft.clientName}
+                                    onChange={(e) =>
+                                      setEditingReviewDraft({
+                                        ...editingReviewDraft,
+                                        clientName: e.target.value,
+                                      })
+                                    }
+                                    className="w-full px-2.5 py-1.5 text-xs font-bold text-[#001E5A] border border-slate-300 rounded-lg"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                    Role
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingReviewDraft.role}
+                                    onChange={(e) =>
+                                      setEditingReviewDraft({
+                                        ...editingReviewDraft,
+                                        role: e.target.value,
+                                      })
+                                    }
+                                    className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                    Company
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingReviewDraft.company}
+                                    onChange={(e) =>
+                                      setEditingReviewDraft({
+                                        ...editingReviewDraft,
+                                        company: e.target.value,
+                                      })
+                                    }
+                                    className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                    Review Headline
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingReviewDraft.headline}
+                                    onChange={(e) =>
+                                      setEditingReviewDraft({
+                                        ...editingReviewDraft,
+                                        headline: e.target.value,
+                                      })
+                                    }
+                                    className="w-full px-2.5 py-1.5 text-xs font-semibold text-[#001E5A] border border-slate-300 rounded-lg"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                    Measurable Result
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingReviewDraft.measurableResult}
+                                    onChange={(e) =>
+                                      setEditingReviewDraft({
+                                        ...editingReviewDraft,
+                                        measurableResult: e.target.value,
+                                      })
+                                    }
+                                    className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg"
+                                  />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                  Review Quote
+                                </label>
+                                <textarea
+                                  rows={3}
+                                  value={editingReviewDraft.quote}
+                                  onChange={(e) =>
+                                    setEditingReviewDraft({
+                                      ...editingReviewDraft,
+                                      quote: e.target.value,
+                                    })
+                                  }
+                                  className="w-full px-2.5 py-1.5 text-xs text-slate-700 border border-slate-300 rounded-lg"
+                                />
+                              </div>
+
+                              <div className="flex items-center justify-end gap-2 pt-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingReviewDraft(null)}
+                                  className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next = customerReviews.map((r) =>
+                                      r.id === editingReviewDraft.id
+                                        ? editingReviewDraft
+                                        : r
+                                    );
+                                    onUpdateCustomerReviews(next);
+                                    notifySaved(
+                                      `Saved & published updates to review from "${editingReviewDraft.clientName}"!`
+                                    );
+                                    setEditingReviewDraft(null);
+                                  }}
+                                  className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors flex items-center gap-1.5"
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  <span>Save &amp; Publish Update</span>
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -6011,508 +6824,601 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
              =================================================================== */}
           {activeTab === 'blog_manager' && (
             <div className="space-y-8">
-              {/* Publish New Blog Post Form (Automatically placed #1 First) */}
-              <form
-                onSubmit={handleAddBlogPost}
-                className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-xs"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5 shadow-xs">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
                   <div>
                     <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
-                      + PUBLISH NEW BLOG ARTICLE (AUTOMATICALLY SHOWN 1ST ON SITE)
+                      STUDIO BLOG POSTS &amp; RICH CONTENT EDITOR (LATEST SHOWN 1ST)
                     </p>
                     <h2 className="text-lg font-bold text-[#001E5A]">
-                      Add New Blog Post After Reviews Section (With Full On-Page SEO)
+                      Published Blog Posts ({blogPosts.length} Active)
                     </h2>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      All published blog posts are listed below. Click <strong>Edit</strong> on any blog post to open the Rich Text Editor (Font, Size, Links, Headings, Lists, Images) and click <strong>Save &amp; Publish Blog Post</strong>, or click <strong>+ Add New Blog Post</strong>.
+                    </p>
                   </div>
-                  <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-mono-tabular font-semibold">
-                    Last Added Blog = #1 First Position
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Blog Post Title (H1/H2) *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={newBlogTitle}
-                      onChange={(e) => setNewBlogTitle(e.target.value)}
-                      placeholder="e.g., How 16-Bit Frequency Separation Preserves Natural Skin Texture"
-                      className="w-full px-3 py-2 text-xs font-bold text-[#001E5A] border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Category Tag *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={newBlogCategory}
-                      onChange={(e) => setNewBlogCategory(e.target.value)}
-                      placeholder="e.g., Clipping Path & E-Commerce"
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Author Name
-                    </label>
-                    <input
-                      type="text"
-                      value={newBlogAuthorName}
-                      onChange={(e) => setNewBlogAuthorName(e.target.value)}
-                      placeholder="Elena Rostova"
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Author Role
-                    </label>
-                    <input
-                      type="text"
-                      value={newBlogAuthorRole}
-                      onChange={(e) => setNewBlogAuthorRole(e.target.value)}
-                      placeholder="Lead Retouching Director"
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Read Time
-                    </label>
-                    <input
-                      type="text"
-                      value={newBlogReadTime}
-                      onChange={(e) => setNewBlogReadTime(e.target.value)}
-                      placeholder="5 min read"
-                      className="w-full px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Related Service Page
-                    </label>
-                    <select
-                      value={newBlogRelatedSlug}
-                      onChange={(e) => setNewBlogRelatedSlug(e.target.value)}
-                      className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                    >
-                      {servicesList.map((s) => (
-                        <option key={s.slug} value={s.slug}>
-                          {s.indexNumber} {s.shortNavTitle}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                    Short Summary / Excerpt (Shown on Blog Card) *
-                  </label>
-                  <textarea
-                    rows={2}
-                    required
-                    value={newBlogExcerpt}
-                    onChange={(e) => setNewBlogExcerpt(e.target.value)}
-                    placeholder="Write a 1–2 sentence summary of the article..."
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                    Full Blog Article Content (Paragraphs) *
-                  </label>
-                  <textarea
-                    rows={5}
-                    required
-                    value={newBlogContent}
-                    onChange={(e) => setNewBlogContent(e.target.value)}
-                    placeholder="Write the full blog post body here. Separate paragraphs with a blank line..."
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                  />
-                </div>
-
-                {/* Blog SEO Title & Meta Description */}
-                <div className="p-4 rounded-xl bg-[#EAF3FC]/70 border border-[#B8D0EB] space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-mono-tabular font-bold text-[#0088FF]">
-                      BLOG POST ON-PAGE SEO (META TITLE &amp; META DESCRIPTION)
-                    </span>
-                    <span className="text-[11px] font-mono-tabular text-emerald-700 font-semibold">
-                      Injected into &lt;title&gt;, &lt;meta description&gt; &amp; BlogPosting Schema
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-[#001E5A] mb-1">
-                        Blog SEO Title (&lt;title&gt;)
-                      </label>
-                      <input
-                        type="text"
-                        value={newBlogSeoTitle}
-                        onChange={(e) => setNewBlogSeoTitle(e.target.value)}
-                        placeholder="Defaults to Blog Title | FixPhoto Studio Blog"
-                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-[#001E5A] mb-1">
-                        Blog SEO Meta Description (&lt;meta name=&quot;description&quot;&gt;)
-                      </label>
-                      <input
-                        type="text"
-                        value={newBlogSeoDesc}
-                        onChange={(e) => setNewBlogSeoDesc(e.target.value)}
-                        placeholder="Defaults to Blog Excerpt (150–160 chars recommended)"
-                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
-                  <label className="px-4 py-2.5 rounded-xl bg-[#F8FAFC] border border-dashed border-[#0088FF] cursor-pointer hover:bg-[#EAF3FC]/60 flex items-center gap-2 text-xs font-semibold text-[#001E5A]">
-                    <UploadCloud className="w-4 h-4 text-[#0088FF]" />
-                    <span>
-                      {newBlogCoverImg
-                        ? 'Custom Blog Cover Image Attached ✓'
-                        : 'Optional: Upload Blog Cover Image'}
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) readImageFileAsDataUrl(f, setNewBlogCoverImg);
-                      }}
-                      className="hidden"
-                    />
-                  </label>
 
                   <button
-                    type="submit"
-                    className="px-6 py-2.5 text-xs font-bold text-white bg-[#001E5A] hover:bg-[#0088FF] rounded-xl transition-colors flex items-center gap-2 shadow-xs"
+                    type="button"
+                    onClick={() => {
+                      setShowAddNewBlogForm((prev) => !prev);
+                      setEditingBlogDraft(null);
+                    }}
+                    className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-2 ${
+                      showAddNewBlogForm
+                        ? 'bg-slate-200 text-slate-700'
+                        : 'bg-[#001E5A] hover:bg-[#0088FF] text-white'
+                    }`}
                   >
-                    <Plus className="w-4 h-4" />
-                    <span>Publish Blog Post (Show 1st on Website)</span>
+                    {showAddNewBlogForm ? (
+                      <>
+                        <X className="w-4 h-4" />
+                        <span>Close Add New Blog Form</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4" />
+                        <span>+ Add New Blog Post</span>
+                      </>
+                    )}
                   </button>
                 </div>
-              </form>
 
-              {/* Manage & Edit Existing Blog Posts */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5 shadow-xs">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
-                  <div>
-                    <h2 className="text-lg font-bold text-[#001E5A]">
-                      Manage &amp; Edit Published Blog Posts ({blogPosts.length} Active)
-                    </h2>
-                    <p className="text-xs text-slate-500">
-                      Position #1 is displayed first on the website. Edit any field, update SEO Title &amp; Meta Description, upload a cover photo, or click &ldquo;Make #1 First&rdquo; to move any post to the first spot.
-                    </p>
-                  </div>
-                </div>
+                {/* Collapsible + Add New Blog Post Form */}
+                {showAddNewBlogForm && (
+                  <form
+                    onSubmit={handleAddBlogPost}
+                    className="bg-[#F8FAFC] border-2 border-[#0088FF] rounded-2xl p-6 space-y-4 shadow-sm"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
+                      <div>
+                        <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
+                          + PUBLISH NEW BLOG ARTICLE (AUTOMATICALLY SHOWN 1ST ON SITE)
+                        </p>
+                        <h3 className="text-base font-bold text-[#001E5A]">
+                          Create New Blog Post with Rich Text Editor &amp; On-Page SEO
+                        </h3>
+                      </div>
+                      <span className="px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-mono-tabular font-semibold">
+                        Last Added Blog = #1 First Position
+                      </span>
+                    </div>
 
-                <div className="space-y-4">
-                  {blogPosts.map((post, idx) => (
-                    <div
-                      key={post.id}
-                      className={`p-5 rounded-2xl border space-y-3.5 ${
-                        idx === 0
-                          ? 'bg-[#F0F7FF] border-[#0088FF]'
-                          : 'bg-[#F8FAFC] border-slate-200'
-                      }`}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 pb-2.5">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono-tabular font-bold ${
-                              idx === 0
-                                ? 'bg-[#0088FF] text-white'
-                                : 'bg-slate-200 text-slate-700'
-                            }`}
-                          >
-                            {idx === 0
-                              ? '★ SHOWN 1ST ON SITE (#1 LATEST)'
-                              : `POSITION #${idx + 1}`}
-                          </span>
-                          <span className="text-xs font-mono-tabular text-slate-500">
-                            ID: {post.id}
-                          </span>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Blog Post Title (H1/H2) *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={newBlogTitle}
+                          onChange={(e) => setNewBlogTitle(e.target.value)}
+                          placeholder="e.g., How 16-Bit Frequency Separation Preserves Natural Skin Texture"
+                          className="w-full px-3 py-2 text-xs font-bold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Category Tag *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={newBlogCategory}
+                          onChange={(e) => setNewBlogCategory(e.target.value)}
+                          placeholder="e.g., Clipping Path & E-Commerce"
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Author Name
+                        </label>
+                        <input
+                          type="text"
+                          value={newBlogAuthorName}
+                          onChange={(e) => setNewBlogAuthorName(e.target.value)}
+                          placeholder="Elena Rostova"
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Author Role
+                        </label>
+                        <input
+                          type="text"
+                          value={newBlogAuthorRole}
+                          onChange={(e) => setNewBlogAuthorRole(e.target.value)}
+                          placeholder="Lead Retouching Director"
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Read Time
+                        </label>
+                        <input
+                          type="text"
+                          value={newBlogReadTime}
+                          onChange={(e) => setNewBlogReadTime(e.target.value)}
+                          placeholder="5 min read"
+                          className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Related Service Page
+                        </label>
+                        <select
+                          value={newBlogRelatedSlug}
+                          onChange={(e) =>
+                            setNewBlogRelatedSlug(e.target.value)
+                          }
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                        >
+                          {servicesList.map((s) => (
+                            <option key={s.slug} value={s.slug}>
+                              {s.indexNumber} {s.shortNavTitle}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                        Short Summary / Excerpt (Shown on Blog Card) *
+                      </label>
+                      <textarea
+                        rows={2}
+                        required
+                        value={newBlogExcerpt}
+                        onChange={(e) => setNewBlogExcerpt(e.target.value)}
+                        placeholder="Write a 1–2 sentence summary of the article..."
+                        className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                      />
+                    </div>
+
+                    <RichTextEditor
+                      label="Full Blog Article Content * (Rich Text Editor: Font Family, Font Size, Headings, Links, Bold, Lists, Colors, Images)"
+                      value={newBlogContent}
+                      onChange={setNewBlogContent}
+                      minHeight="260px"
+                      placeholder="Write and format the full blog post body here. Change fonts, sizes, add headings, links, bullet lists, or images..."
+                    />
+
+                    {/* Blog SEO Title & Meta Description */}
+                    <div className="p-4 rounded-xl bg-white border border-[#B8D0EB] space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-mono-tabular font-bold text-[#0088FF]">
+                          BLOG POST ON-PAGE SEO (META TITLE &amp; META DESCRIPTION)
+                        </span>
+                        <span className="text-[11px] font-mono-tabular text-emerald-700 font-semibold">
+                          Injected into &lt;title&gt;, &lt;meta description&gt; &amp; BlogPosting Schema
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-[#001E5A] mb-1">
+                            Blog SEO Title (&lt;title&gt;)
+                          </label>
+                          <input
+                            type="text"
+                            value={newBlogSeoTitle}
+                            onChange={(e) => setNewBlogSeoTitle(e.target.value)}
+                            placeholder="Defaults to Blog Title | FixPhoto Studio Blog"
+                            className="w-full px-3 py-2 text-xs bg-[#F8FAFC] border border-slate-300 rounded-lg"
+                          />
                         </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-[#001E5A] mb-1">
+                            Blog SEO Meta Description (&lt;meta name=&quot;description&quot;&gt;)
+                          </label>
+                          <input
+                            type="text"
+                            value={newBlogSeoDesc}
+                            onChange={(e) => setNewBlogSeoDesc(e.target.value)}
+                            placeholder="Defaults to Blog Excerpt (150–160 chars recommended)"
+                            className="w-full px-3 py-2 text-xs bg-[#F8FAFC] border border-slate-300 rounded-lg"
+                          />
+                        </div>
+                      </div>
+                    </div>
 
-                        <div className="flex items-center gap-2">
-                          {idx > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-4 pt-2">
+                      <label className="px-4 py-2.5 rounded-xl bg-white border border-dashed border-[#0088FF] cursor-pointer hover:bg-[#EAF3FC]/60 flex items-center gap-2 text-xs font-semibold text-[#001E5A]">
+                        <UploadCloud className="w-4 h-4 text-[#0088FF]" />
+                        <span>
+                          {newBlogCoverImg
+                            ? 'Custom Blog Cover Image Attached ✓'
+                            : 'Optional: Upload Blog Cover Image'}
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) readImageFileAsDataUrl(f, setNewBlogCoverImg);
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowAddNewBlogForm(false)}
+                          className="px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-6 py-2.5 text-xs font-bold text-white bg-[#001E5A] hover:bg-[#0088FF] rounded-xl transition-colors flex items-center gap-2 shadow-xs"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Publish Blog Post (Show 1st on Website)</span>
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                )}
+
+                {/* Published Blog Posts Clean List (All 5 Blogs shown in normal list; only the one clicked with Edit opens the full editor) */}
+                <div className="space-y-3">
+                  {blogPosts.map((post, idx) => {
+                    const isEditingBlog = editingBlogDraft?.id === post.id;
+                    return (
+                      <div
+                        key={post.id}
+                        className={`p-5 rounded-2xl border transition-all ${
+                          isEditingBlog
+                            ? 'bg-[#F0F7FF] border-2 border-[#0088FF] shadow-md space-y-4'
+                            : idx === 0
+                            ? 'bg-[#F8FAFC] border-[#B8D0EB] hover:border-[#0088FF]'
+                            : 'bg-[#F8FAFC] border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="space-y-1.5 max-w-3xl">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono-tabular font-bold ${
+                                  idx === 0
+                                    ? 'bg-[#0088FF] text-white'
+                                    : 'bg-slate-200 text-slate-700'
+                                }`}
+                              >
+                                {idx === 0
+                                  ? '★ SHOWN 1ST ON SITE (#1 LATEST)'
+                                  : `POSITION #${idx + 1}`}
+                              </span>
+                              <span className="px-2.5 py-0.5 rounded-md bg-blue-100 text-[#001E5A] text-[11px] font-mono-tabular font-semibold">
+                                {post.category}
+                              </span>
+                              <span className="text-xs font-mono-tabular text-slate-500">
+                                {post.publishedAt} · {post.readTime}
+                              </span>
+                            </div>
+
+                            <h3 className="text-base font-bold text-[#001E5A]">
+                              {post.title}
+                            </h3>
+
+                            {!isEditingBlog && (
+                              <>
+                                <p className="text-xs text-slate-600 line-clamp-2">
+                                  {post.excerpt}
+                                </p>
+                                <p className="text-[11px] text-slate-500">
+                                  Author: <strong>{post.authorName}</strong> ({post.authorRole})
+                                </p>
+                              </>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 shrink-0">
+                            {idx > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const remaining = blogPosts.filter(
+                                    (b) => b.id !== post.id
+                                  );
+                                  onUpdateBlogPosts([post, ...remaining]);
+                                  notifySaved(
+                                    `Moved "${post.title}" to #1 First position on the website!`
+                                  );
+                                }}
+                                className="px-3 py-1.5 rounded-lg bg-[#EAF3FC] hover:bg-[#001E5A] text-[#001E5A] hover:text-white text-xs font-bold transition-colors"
+                              >
+                                Make #1 First ↑
+                              </button>
+                            )}
+
+                            {!isEditingBlog ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingBlogDraft({ ...post });
+                                  setShowAddNewBlogForm(false);
+                                }}
+                                className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5"
+                              >
+                                <Pencil className="w-3.5 h-3.5 text-[#0088FF]" />
+                                <span>Edit</span>
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setEditingBlogDraft(null)}
+                                className="px-3.5 py-1.5 rounded-lg bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>Cancel</span>
+                              </button>
+                            )}
+
                             <button
                               type="button"
                               onClick={() => {
-                                const remaining = blogPosts.filter(
-                                  (b) => b.id !== post.id
+                                onUpdateBlogPosts(
+                                  blogPosts.filter((b) => b.id !== post.id)
                                 );
-                                onUpdateBlogPosts([post, ...remaining]);
-                                notifySaved(
-                                  `Moved "${post.title}" to #1 First position on the website!`
-                                );
+                                if (isEditingBlog) {
+                                  setEditingBlogDraft(null);
+                                }
+                                notifySaved(`Deleted blog post "${post.title}".`);
                               }}
-                              className="px-3 py-1 rounded-lg bg-[#001E5A] hover:bg-[#0088FF] text-white text-[11px] font-bold transition-colors"
+                              className="p-1.5 text-slate-400 hover:text-red-600 bg-white border border-slate-200 rounded-lg"
+                              title="Delete Blog Post"
                             >
-                              Make #1 First ↑
+                              <Trash2 className="w-4 h-4" />
                             </button>
-                          )}
+                          </div>
+                        </div>
 
-                          <label className="px-3 py-1 rounded-lg bg-white border border-slate-300 hover:border-[#0088FF] text-[#001E5A] text-[11px] font-semibold cursor-pointer flex items-center gap-1">
-                            <UploadCloud className="w-3.5 h-3.5 text-[#0088FF]" />
-                            <span>
-                              {post.coverImageUrl
-                                ? 'Replace Cover Image'
-                                : 'Upload Cover Image'}
-                            </span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (!file) return;
-                                readImageFileAsDataUrl(file, (dataUrl) => {
-                                  const next = blogPosts.map((b) =>
-                                    b.id === post.id
-                                      ? { ...b, coverImageUrl: dataUrl }
-                                      : b
-                                  );
-                                  onUpdateBlogPosts(next);
-                                  notifySaved(
-                                    `Updated cover image for "${post.title}"!`
-                                  );
-                                });
-                              }}
-                              className="hidden"
+                        {/* Single Blog Edit Panel (Only rendered when Admin clicks Edit on this blog) */}
+                        {isEditingBlog && editingBlogDraft && (
+                          <div className="pt-4 border-t border-blue-200 bg-white p-5 rounded-xl space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div className="md:col-span-2">
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                  Blog Title
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editingBlogDraft.title}
+                                  onChange={(e) =>
+                                    setEditingBlogDraft({
+                                      ...editingBlogDraft,
+                                      title: e.target.value,
+                                    })
+                                  }
+                                  className="w-full px-3 py-2 text-xs font-bold text-[#001E5A] bg-[#F8FAFC] border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                  Category
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editingBlogDraft.category}
+                                  onChange={(e) =>
+                                    setEditingBlogDraft({
+                                      ...editingBlogDraft,
+                                      category: e.target.value,
+                                    })
+                                  }
+                                  className="w-full px-3 py-2 text-xs bg-[#F8FAFC] border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                              <div>
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                  Author Name
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editingBlogDraft.authorName}
+                                  onChange={(e) =>
+                                    setEditingBlogDraft({
+                                      ...editingBlogDraft,
+                                      authorName: e.target.value,
+                                    })
+                                  }
+                                  className="w-full px-2.5 py-1.5 text-xs bg-[#F8FAFC] border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                  Author Role
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editingBlogDraft.authorRole}
+                                  onChange={(e) =>
+                                    setEditingBlogDraft({
+                                      ...editingBlogDraft,
+                                      authorRole: e.target.value,
+                                    })
+                                  }
+                                  className="w-full px-2.5 py-1.5 text-xs bg-[#F8FAFC] border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                  Published Date
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editingBlogDraft.publishedAt}
+                                  onChange={(e) =>
+                                    setEditingBlogDraft({
+                                      ...editingBlogDraft,
+                                      publishedAt: e.target.value,
+                                    })
+                                  }
+                                  className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-[#F8FAFC] border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                  Read Time
+                                </label>
+                                <input
+                                  type="text"
+                                  value={editingBlogDraft.readTime}
+                                  onChange={(e) =>
+                                    setEditingBlogDraft({
+                                      ...editingBlogDraft,
+                                      readTime: e.target.value,
+                                    })
+                                  }
+                                  className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-[#F8FAFC] border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                Card Summary / Excerpt
+                              </label>
+                              <textarea
+                                rows={2}
+                                value={editingBlogDraft.excerpt}
+                                onChange={(e) =>
+                                  setEditingBlogDraft({
+                                    ...editingBlogDraft,
+                                    excerpt: e.target.value,
+                                  })
+                                }
+                                className="w-full px-3 py-1.5 text-xs text-slate-700 bg-[#F8FAFC] border border-slate-300 rounded-lg"
+                              />
+                            </div>
+
+                            <RichTextEditor
+                              label="Full Article Content (Rich Text Editor: Font Family, Font Size, Headings, Links, Bold, Lists, Colors, Images)"
+                              value={editingBlogDraft.content}
+                              onChange={(html) =>
+                                setEditingBlogDraft({
+                                  ...editingBlogDraft,
+                                  content: html,
+                                })
+                              }
+                              minHeight="280px"
+                              placeholder="Edit and format the full blog post content..."
                             />
-                          </label>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              onUpdateBlogPosts(
-                                blogPosts.filter((b) => b.id !== post.id)
-                              );
-                              notifySaved(`Deleted blog post "${post.title}".`);
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-red-600 rounded"
-                            title="Delete Blog Post"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <div className="md:col-span-2">
-                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                            Blog Title
-                          </label>
-                          <input
-                            type="text"
-                            value={post.title}
-                            onChange={(e) => {
-                              const next = blogPosts.map((b) =>
-                                b.id === post.id
-                                  ? { ...b, title: e.target.value }
-                                  : b
-                              );
-                              onUpdateBlogPosts(next);
-                            }}
-                            className="w-full px-3 py-1.5 text-xs font-bold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                            Category
-                          </label>
-                          <input
-                            type="text"
-                            value={post.category}
-                            onChange={(e) => {
-                              const next = blogPosts.map((b) =>
-                                b.id === post.id
-                                  ? { ...b, category: e.target.value }
-                                  : b
-                              );
-                              onUpdateBlogPosts(next);
-                            }}
-                            className="w-full px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                            Author Name
-                          </label>
-                          <input
-                            type="text"
-                            value={post.authorName}
-                            onChange={(e) => {
-                              const next = blogPosts.map((b) =>
-                                b.id === post.id
-                                  ? { ...b, authorName: e.target.value }
-                                  : b
-                              );
-                              onUpdateBlogPosts(next);
-                            }}
-                            className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                            Author Role
-                          </label>
-                          <input
-                            type="text"
-                            value={post.authorRole}
-                            onChange={(e) => {
-                              const next = blogPosts.map((b) =>
-                                b.id === post.id
-                                  ? { ...b, authorRole: e.target.value }
-                                  : b
-                              );
-                              onUpdateBlogPosts(next);
-                            }}
-                            className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                            Published Date
-                          </label>
-                          <input
-                            type="text"
-                            value={post.publishedAt}
-                            onChange={(e) => {
-                              const next = blogPosts.map((b) =>
-                                b.id === post.id
-                                  ? { ...b, publishedAt: e.target.value }
-                                  : b
-                              );
-                              onUpdateBlogPosts(next);
-                            }}
-                            className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                            Read Time
-                          </label>
-                          <input
-                            type="text"
-                            value={post.readTime}
-                            onChange={(e) => {
-                              const next = blogPosts.map((b) =>
-                                b.id === post.id
-                                  ? { ...b, readTime: e.target.value }
-                                  : b
-                              );
-                              onUpdateBlogPosts(next);
-                            }}
-                            className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                          Card Summary / Excerpt
-                        </label>
-                        <textarea
-                          rows={2}
-                          value={post.excerpt}
-                          onChange={(e) => {
-                            const next = blogPosts.map((b) =>
-                              b.id === post.id
-                                ? { ...b, excerpt: e.target.value }
-                                : b
-                            );
-                            onUpdateBlogPosts(next);
-                          }}
-                          className="w-full px-3 py-1.5 text-xs text-slate-700 bg-white border border-slate-300 rounded-lg"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                          Full Article Content
-                        </label>
-                        <textarea
-                          rows={4}
-                          value={post.content}
-                          onChange={(e) => {
-                            const next = blogPosts.map((b) =>
-                              b.id === post.id
-                                ? { ...b, content: e.target.value }
-                                : b
-                            );
-                            onUpdateBlogPosts(next);
-                          }}
-                          className="w-full px-3 py-1.5 text-xs text-slate-700 bg-white border border-slate-300 rounded-lg"
-                        />
-                      </div>
-
-                      {/* Blog Post Live SEO Title & Meta Description Editor */}
-                      <div className="p-3.5 rounded-xl bg-white border border-[#B8D0EB] grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-[#0088FF] mb-1">
-                            SEO Meta Title (&lt;title&gt;)
-                          </label>
-                          <input
-                            type="text"
-                            value={
-                              post.seoTitle ??
-                              `${post.title} | FixPhoto Studio Blog`
-                            }
-                            onChange={(e) => {
-                              const next = blogPosts.map((b) =>
-                                b.id === post.id
-                                  ? { ...b, seoTitle: e.target.value }
-                                  : b
-                              );
-                              onUpdateBlogPosts(next);
-                            }}
-                            className="w-full px-2.5 py-1.5 text-xs font-semibold text-[#001E5A] bg-[#F8FAFC] border border-slate-300 rounded-lg"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold text-[#0088FF] mb-1">
-                            SEO Meta Description (&lt;meta name=&quot;description&quot;&gt;)
-                          </label>
-                          <input
-                            type="text"
-                            value={post.seoMetaDescription ?? post.excerpt}
-                            onChange={(e) => {
-                              const next = blogPosts.map((b) =>
-                                b.id === post.id
-                                  ? {
-                                      ...b,
+                            {/* Blog Post SEO Title & Meta Description Editor */}
+                            <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#B8D0EB] grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-[11px] font-semibold text-[#0088FF] mb-1">
+                                  SEO Meta Title (&lt;title&gt;)
+                                </label>
+                                <input
+                                  type="text"
+                                  value={
+                                    editingBlogDraft.seoTitle ??
+                                    `${editingBlogDraft.title} | FixPhoto Studio Blog`
+                                  }
+                                  onChange={(e) =>
+                                    setEditingBlogDraft({
+                                      ...editingBlogDraft,
+                                      seoTitle: e.target.value,
+                                    })
+                                  }
+                                  className="w-full px-2.5 py-1.5 text-xs font-semibold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[11px] font-semibold text-[#0088FF] mb-1">
+                                  SEO Meta Description (&lt;meta name=&quot;description&quot;&gt;)
+                                </label>
+                                <input
+                                  type="text"
+                                  value={
+                                    editingBlogDraft.seoMetaDescription ??
+                                    editingBlogDraft.excerpt
+                                  }
+                                  onChange={(e) =>
+                                    setEditingBlogDraft({
+                                      ...editingBlogDraft,
                                       seoMetaDescription: e.target.value,
-                                    }
-                                  : b
-                              );
-                              onUpdateBlogPosts(next);
-                            }}
-                            className="w-full px-2.5 py-1.5 text-xs text-slate-700 bg-[#F8FAFC] border border-slate-300 rounded-lg"
-                          />
-                        </div>
+                                    })
+                                  }
+                                  className="w-full px-2.5 py-1.5 text-xs text-slate-700 bg-white border border-slate-300 rounded-lg"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                              <label className="px-3.5 py-2 rounded-lg bg-[#EAF3FC] hover:bg-[#001E5A] text-[#001E5A] hover:text-white text-xs font-semibold cursor-pointer flex items-center gap-1.5 transition-colors">
+                                <UploadCloud className="w-4 h-4 text-[#0088FF]" />
+                                <span>
+                                  {editingBlogDraft.coverImageUrl
+                                    ? 'Replace Cover Image'
+                                    : 'Upload Cover Image'}
+                                </span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    readImageFileAsDataUrl(file, (dataUrl) => {
+                                      setEditingBlogDraft({
+                                        ...editingBlogDraft,
+                                        coverImageUrl: dataUrl,
+                                      });
+                                    });
+                                  }}
+                                  className="hidden"
+                                />
+                              </label>
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingBlogDraft(null)}
+                                  className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next = blogPosts.map((b) =>
+                                      b.id === editingBlogDraft.id
+                                        ? editingBlogDraft
+                                        : b
+                                    );
+                                    onUpdateBlogPosts(next);
+                                    notifySaved(
+                                      `Saved & published updates to blog post "${editingBlogDraft.title}"!`
+                                    );
+                                    setEditingBlogDraft(null);
+                                  }}
+                                  className="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-xs"
+                                >
+                                  <CheckCircle2 className="w-4 h-4" />
+                                  <span>Save &amp; Publish Blog Post</span>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -6530,14 +7436,14 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                     01 · MAIN WEBSITE PAGES ON-PAGE SEO
                   </p>
                   <h2 className="text-lg font-bold text-[#001E5A]">
-                    Edit SEO Title (&lt;title&gt;) &amp; Meta Description for All Main Website Pages
+                    Main Website Pages SEO — Click Edit Icon to Modify Title &amp; Meta Description
                   </h2>
                   <p className="text-xs text-slate-600">
-                    Every change here updates the live browser <code className="font-mono-tabular bg-slate-100 px-1 rounded">&lt;title&gt;</code>, <code className="font-mono-tabular bg-slate-100 px-1 rounded">&lt;meta name=&quot;description&quot;&gt;</code>, OpenGraph tags, Twitter cards, and Schema.org JSON-LD.
+                    Click <strong>Edit SEO</strong> on any page to update its live <code className="font-mono-tabular bg-slate-100 px-1 rounded">&lt;title&gt;</code> and <code className="font-mono-tabular bg-slate-100 px-1 rounded">&lt;meta name=&quot;description&quot;&gt;</code>, then click <strong>Save &amp; Publish SEO</strong>.
                   </p>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {[
                     {
                       key: 'home',
@@ -6608,62 +7514,145 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                       seoTitle: pageItem.defaultTitle,
                       seoMetaDescription: pageItem.defaultDesc,
                     };
+                    const isEditingThisSeo =
+                      editingSeoDraft?.type === 'main_page' &&
+                      editingSeoDraft?.id === pageItem.key;
+
                     return (
                       <div
                         key={pageItem.key}
-                        className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-2.5"
+                        className={`p-4 rounded-xl border space-y-2.5 transition-all ${
+                          isEditingThisSeo
+                            ? 'bg-blue-50/50 border-[#0088FF]'
+                            : 'bg-[#F8FAFC] border-slate-200'
+                        }`}
                       >
-                        <p className="text-xs font-bold text-[#001E5A]">
-                          {pageItem.label}
-                        </p>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div>
-                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                              SEO Title (&lt;title&gt;)
-                            </label>
-                            <input
-                              type="text"
-                              value={currentEntry.seoTitle}
-                              onChange={(e) => {
-                                const nextPageSeo = {
-                                  ...(siteConfig.pageSeo || {}),
-                                  [pageItem.key]: {
-                                    ...currentEntry,
-                                    seoTitle: e.target.value,
-                                  },
-                                };
-                                onUpdateSiteConfig({
-                                  ...siteConfig,
-                                  pageSeo: nextPageSeo,
-                                });
-                              }}
-                              className="w-full px-3 py-1.5 text-xs font-semibold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                              Meta Description (&lt;meta name=&quot;description&quot;&gt;)
-                            </label>
-                            <input
-                              type="text"
-                              value={currentEntry.seoMetaDescription}
-                              onChange={(e) => {
-                                const nextPageSeo = {
-                                  ...(siteConfig.pageSeo || {}),
-                                  [pageItem.key]: {
-                                    ...currentEntry,
-                                    seoMetaDescription: e.target.value,
-                                  },
-                                };
-                                onUpdateSiteConfig({
-                                  ...siteConfig,
-                                  pageSeo: nextPageSeo,
-                                });
-                              }}
-                              className="w-full px-3 py-1.5 text-xs text-slate-700 bg-white border border-slate-300 rounded-lg"
-                            />
-                          </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-xs font-bold text-[#001E5A]">
+                            {pageItem.label}
+                          </p>
+                          {!isEditingThisSeo ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditingSeoDraft({
+                                  type: 'main_page',
+                                  id: pageItem.key,
+                                  seoTitle: currentEntry.seoTitle,
+                                  seoMetaDescription:
+                                    currentEntry.seoMetaDescription,
+                                })
+                              }
+                              className="px-3 py-1 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0"
+                            >
+                              <Pencil className="w-3.5 h-3.5 text-[#0088FF]" />
+                              <span>Edit SEO</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setEditingSeoDraft(null)}
+                              className="px-3 py-1 rounded-lg bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1 shrink-0"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              <span>Cancel</span>
+                            </button>
+                          )}
                         </div>
+
+                        {!isEditingThisSeo ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-200/80">
+                            <div>
+                              <span className="text-[10px] font-mono-tabular text-slate-400 uppercase block">
+                                SEO Title
+                              </span>
+                              <p className="font-semibold text-[#001E5A] truncate">
+                                {currentEntry.seoTitle}
+                              </p>
+                            </div>
+                            <div>
+                              <span className="text-[10px] font-mono-tabular text-slate-400 uppercase block">
+                                Meta Description
+                              </span>
+                              <p className="text-slate-600 line-clamp-1">
+                                {currentEntry.seoMetaDescription}
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          editingSeoDraft && (
+                            <div className="space-y-3 pt-2 border-t border-blue-200">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                    SEO Title (&lt;title&gt;)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingSeoDraft.seoTitle}
+                                    onChange={(e) =>
+                                      setEditingSeoDraft({
+                                        ...editingSeoDraft,
+                                        seoTitle: e.target.value,
+                                      })
+                                    }
+                                    className="w-full px-3 py-1.5 text-xs font-semibold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                    Meta Description (&lt;meta name=&quot;description&quot;&gt;)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingSeoDraft.seoMetaDescription}
+                                    onChange={(e) =>
+                                      setEditingSeoDraft({
+                                        ...editingSeoDraft,
+                                        seoMetaDescription: e.target.value,
+                                      })
+                                    }
+                                    className="w-full px-3 py-1.5 text-xs text-slate-700 bg-white border border-slate-300 rounded-lg"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingSeoDraft(null)}
+                                  className="px-3.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-600"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextPageSeo = {
+                                      ...(siteConfig.pageSeo || {}),
+                                      [pageItem.key]: {
+                                        seoTitle: editingSeoDraft.seoTitle,
+                                        seoMetaDescription:
+                                          editingSeoDraft.seoMetaDescription,
+                                      },
+                                    };
+                                    onUpdateSiteConfig({
+                                      ...siteConfig,
+                                      pageSeo: nextPageSeo,
+                                    });
+                                    notifySaved(
+                                      `Saved & published SEO for "${pageItem.label}"!`
+                                    );
+                                    setEditingSeoDraft(null);
+                                  }}
+                                  className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Save &amp; Publish SEO</span>
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        )}
                       </div>
                     );
                   })}
@@ -6677,7 +7666,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                     02 · ALL {servicesList.length} PHOTO &amp; VIDEO SERVICE PAGES SEO
                   </p>
                   <h2 className="text-lg font-bold text-[#001E5A]">
-                    Edit SEO Title &amp; Meta Description for Every Service Page
+                    Service Pages SEO List — Click Edit Icon to Modify Title &amp; Meta Description
                   </h2>
                 </div>
 
@@ -6686,62 +7675,144 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                     const rateStr = `$${srv.ratePerImage.toFixed(2)}/${srv.unitLabel}`;
                     const fallbackTitle = `${srv.shortNavTitle} (${rateStr}) – FixPhoto Studio`;
                     const fallbackDesc = `${srv.summary.slice(0, 95).trim()} Starting at ${rateStr} with ${srv.turnaroundLabel.split('·')[0].trim()}. Claim your free 5-image trial today.`;
+                    const currentSeoTitle = srv.seoTitle ?? fallbackTitle;
+                    const currentSeoDesc =
+                      srv.seoMetaDescription ?? fallbackDesc;
+                    const isEditingThisSrvSeo =
+                      editingSeoDraft?.type === 'service_page' &&
+                      editingSeoDraft?.id === srv.slug;
+
                     return (
                       <div
                         key={srv.slug}
-                        className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-2"
+                        className={`p-4 rounded-xl border space-y-2 transition-all ${
+                          isEditingThisSrvSeo
+                            ? 'bg-blue-50/50 border-[#0088FF]'
+                            : 'bg-[#F8FAFC] border-slate-200'
+                        }`}
                       >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-[#001E5A]">
-                            {srv.indexNumber} · {srv.title}
-                          </span>
-                          <span className="text-[11px] font-mono-tabular text-[#0088FF]">
-                            #service/{srv.slug}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="flex items-center justify-between gap-3">
                           <div>
-                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                              SEO Title (&lt;title&gt;)
-                            </label>
-                            <input
-                              type="text"
-                              value={srv.seoTitle ?? fallbackTitle}
-                              onChange={(e) => {
-                                onUpdateServicesList(
-                                  servicesList.map((s) =>
-                                    s.slug === srv.slug
-                                      ? { ...s, seoTitle: e.target.value }
-                                      : s
-                                  )
-                                );
-                              }}
-                              className="w-full px-3 py-1.5 text-xs font-semibold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
-                            />
+                            <span className="text-xs font-bold text-[#001E5A]">
+                              {srv.indexNumber} · {srv.title}
+                            </span>
+                            <span className="ml-2 text-[11px] font-mono-tabular text-[#0088FF]">
+                              #service/{srv.slug}
+                            </span>
                           </div>
-                          <div>
-                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                              Meta Description (&lt;meta name=&quot;description&quot;&gt;)
-                            </label>
-                            <input
-                              type="text"
-                              value={srv.seoMetaDescription ?? fallbackDesc}
-                              onChange={(e) => {
-                                onUpdateServicesList(
-                                  servicesList.map((s) =>
-                                    s.slug === srv.slug
-                                      ? {
-                                          ...s,
-                                          seoMetaDescription: e.target.value,
-                                        }
-                                      : s
-                                  )
-                                );
-                              }}
-                              className="w-full px-3 py-1.5 text-xs text-slate-700 bg-white border border-slate-300 rounded-lg"
-                            />
-                          </div>
+
+                          {!isEditingThisSrvSeo ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditingSeoDraft({
+                                  type: 'service_page',
+                                  id: srv.slug,
+                                  seoTitle: currentSeoTitle,
+                                  seoMetaDescription: currentSeoDesc,
+                                })
+                              }
+                              className="px-3 py-1 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0"
+                            >
+                              <Pencil className="w-3.5 h-3.5 text-[#0088FF]" />
+                              <span>Edit SEO</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setEditingSeoDraft(null)}
+                              className="px-3 py-1 rounded-lg bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1 shrink-0"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              <span>Cancel</span>
+                            </button>
+                          )}
                         </div>
+
+                        {!isEditingThisSrvSeo ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-200/80">
+                            <p className="font-semibold text-[#001E5A] truncate">
+                              {currentSeoTitle}
+                            </p>
+                            <p className="text-slate-600 line-clamp-1">
+                              {currentSeoDesc}
+                            </p>
+                          </div>
+                        ) : (
+                          editingSeoDraft && (
+                            <div className="space-y-3 pt-2 border-t border-blue-200">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                    SEO Title (&lt;title&gt;)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingSeoDraft.seoTitle}
+                                    onChange={(e) =>
+                                      setEditingSeoDraft({
+                                        ...editingSeoDraft,
+                                        seoTitle: e.target.value,
+                                      })
+                                    }
+                                    className="w-full px-3 py-1.5 text-xs font-semibold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                    Meta Description (&lt;meta name=&quot;description&quot;&gt;)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingSeoDraft.seoMetaDescription}
+                                    onChange={(e) =>
+                                      setEditingSeoDraft({
+                                        ...editingSeoDraft,
+                                        seoMetaDescription: e.target.value,
+                                      })
+                                    }
+                                    className="w-full px-3 py-1.5 text-xs text-slate-700 bg-white border border-slate-300 rounded-lg"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingSeoDraft(null)}
+                                  className="px-3.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-600"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onUpdateServicesList(
+                                      servicesList.map((s) =>
+                                        s.slug === srv.slug
+                                          ? {
+                                              ...s,
+                                              seoTitle:
+                                                editingSeoDraft.seoTitle,
+                                              seoMetaDescription:
+                                                editingSeoDraft.seoMetaDescription,
+                                            }
+                                          : s
+                                      )
+                                    );
+                                    notifySaved(
+                                      `Saved & published SEO for service "${srv.shortNavTitle}"!`
+                                    );
+                                    setEditingSeoDraft(null);
+                                  }}
+                                  className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Save &amp; Publish SEO</span>
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        )}
                       </div>
                     );
                   })}
@@ -6755,72 +7826,154 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                     03 · ALL {blogPosts.length} BLOG POSTS SEO
                   </p>
                   <h2 className="text-lg font-bold text-[#001E5A]">
-                    Edit SEO Title &amp; Meta Description for Every Blog Article
+                    Blog Posts SEO List — Click Edit Icon to Modify Title &amp; Meta Description
                   </h2>
                 </div>
 
                 <div className="space-y-3">
-                  {blogPosts.map((post, idx) => (
-                    <div
-                      key={post.id}
-                      className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-[#001E5A]">
-                          #{idx + 1} · {post.title}
-                        </span>
-                        <span className="text-[11px] font-mono-tabular text-[#0088FF]">
-                          {post.category}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                            Blog SEO Title (&lt;title&gt;)
-                          </label>
-                          <input
-                            type="text"
-                            value={
-                              post.seoTitle ??
-                              `${post.title} | FixPhoto Studio Blog`
-                            }
-                            onChange={(e) => {
-                              onUpdateBlogPosts(
-                                blogPosts.map((b) =>
-                                  b.id === post.id
-                                    ? { ...b, seoTitle: e.target.value }
-                                    : b
-                                )
-                              );
-                            }}
-                            className="w-full px-3 py-1.5 text-xs font-semibold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
-                          />
+                  {blogPosts.map((post, idx) => {
+                    const currentBlogSeoTitle =
+                      post.seoTitle ?? `${post.title} | FixPhoto Studio Blog`;
+                    const currentBlogSeoDesc =
+                      post.seoMetaDescription ?? post.excerpt;
+                    const isEditingThisBlogSeo =
+                      editingSeoDraft?.type === 'blog_post' &&
+                      editingSeoDraft?.id === post.id;
+
+                    return (
+                      <div
+                        key={post.id}
+                        className={`p-4 rounded-xl border space-y-2 transition-all ${
+                          isEditingThisBlogSeo
+                            ? 'bg-blue-50/50 border-[#0088FF]'
+                            : 'bg-[#F8FAFC] border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <span className="text-xs font-bold text-[#001E5A]">
+                              #{idx + 1} · {post.title}
+                            </span>
+                            <span className="ml-2 text-[11px] font-mono-tabular text-[#0088FF]">
+                              {post.category}
+                            </span>
+                          </div>
+
+                          {!isEditingThisBlogSeo ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditingSeoDraft({
+                                  type: 'blog_post',
+                                  id: post.id,
+                                  seoTitle: currentBlogSeoTitle,
+                                  seoMetaDescription: currentBlogSeoDesc,
+                                })
+                              }
+                              className="px-3 py-1 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0"
+                            >
+                              <Pencil className="w-3.5 h-3.5 text-[#0088FF]" />
+                              <span>Edit SEO</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setEditingSeoDraft(null)}
+                              className="px-3 py-1 rounded-lg bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1 shrink-0"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                              <span>Cancel</span>
+                            </button>
+                          )}
                         </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                            Blog Meta Description (&lt;meta name=&quot;description&quot;&gt;)
-                          </label>
-                          <input
-                            type="text"
-                            value={post.seoMetaDescription ?? post.excerpt}
-                            onChange={(e) => {
-                              onUpdateBlogPosts(
-                                blogPosts.map((b) =>
-                                  b.id === post.id
-                                    ? {
-                                        ...b,
+
+                        {!isEditingThisBlogSeo ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs pt-1 border-t border-slate-200/80">
+                            <p className="font-semibold text-[#001E5A] truncate">
+                              {currentBlogSeoTitle}
+                            </p>
+                            <p className="text-slate-600 line-clamp-1">
+                              {currentBlogSeoDesc}
+                            </p>
+                          </div>
+                        ) : (
+                          editingSeoDraft && (
+                            <div className="space-y-3 pt-2 border-t border-blue-200">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                    Blog SEO Title (&lt;title&gt;)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingSeoDraft.seoTitle}
+                                    onChange={(e) =>
+                                      setEditingSeoDraft({
+                                        ...editingSeoDraft,
+                                        seoTitle: e.target.value,
+                                      })
+                                    }
+                                    className="w-full px-3 py-1.5 text-xs font-semibold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                                    Blog Meta Description (&lt;meta name=&quot;description&quot;&gt;)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={editingSeoDraft.seoMetaDescription}
+                                    onChange={(e) =>
+                                      setEditingSeoDraft({
+                                        ...editingSeoDraft,
                                         seoMetaDescription: e.target.value,
-                                      }
-                                    : b
-                                )
-                              );
-                            }}
-                            className="w-full px-3 py-1.5 text-xs text-slate-700 bg-white border border-slate-300 rounded-lg"
-                          />
-                        </div>
+                                      })
+                                    }
+                                    className="w-full px-3 py-1.5 text-xs text-slate-700 bg-white border border-slate-300 rounded-lg"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingSeoDraft(null)}
+                                  className="px-3.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-600"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    onUpdateBlogPosts(
+                                      blogPosts.map((b) =>
+                                        b.id === post.id
+                                          ? {
+                                              ...b,
+                                              seoTitle:
+                                                editingSeoDraft.seoTitle,
+                                              seoMetaDescription:
+                                                editingSeoDraft.seoMetaDescription,
+                                            }
+                                          : b
+                                      )
+                                    );
+                                    notifySaved(
+                                      `Saved & published SEO for blog "${post.title}"!`
+                                    );
+                                    setEditingSeoDraft(null);
+                                  }}
+                                  className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Save &amp; Publish SEO</span>
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -6831,181 +7984,294 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
              =================================================================== */}
           {activeTab === 'global_hero_footer' && (
             <div className="space-y-8">
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
-                <h2 className="text-lg font-bold text-[#001E5A] border-b border-slate-200 pb-3">
-                  Edit Home Hero Headlines, Quantitative Proof Metrics & Footer Copy
-                </h2>
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5 shadow-xs">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
+                  <div>
+                    <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
+                      GLOBAL SITE SETTINGS, HERO HEADLINES &amp; FOOTER
+                    </p>
+                    <h2 className="text-lg font-bold text-[#001E5A]">
+                      Home Hero Headlines, Quantitative Proof Metrics &amp; Footer Copy
+                    </h2>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Click <strong>Edit Site Settings</strong> to modify the Hero headlines, metrics, or footer copy and click <strong>Save &amp; Publish Settings</strong>.
+                    </p>
+                  </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Hero Eyebrow Line
-                    </label>
-                    <input
-                      type="text"
-                      value={siteConfig.heroEyebrow}
-                      onChange={(e) =>
-                        onUpdateSiteConfig({
-                          ...siteConfig,
-                          heroEyebrow: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Primary Hero Button Label
-                    </label>
-                    <input
-                      type="text"
-                      value={siteConfig.primaryCtaLabel}
-                      onChange={(e) =>
-                        onUpdateSiteConfig({
-                          ...siteConfig,
-                          primaryCtaLabel: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
-                    />
-                  </div>
+                  {!isEditingSiteSettings ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSiteSettingsDraft({ ...siteConfig });
+                        setIsEditingSiteSettings(true);
+                      }}
+                      className="px-4 py-2.5 rounded-xl bg-[#001E5A] hover:bg-[#0088FF] text-white text-xs font-bold transition-colors flex items-center gap-2"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      <span>Edit Site Settings &amp; Hero</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingSiteSettings(false)}
+                      className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold flex items-center gap-1.5"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>Cancel</span>
+                    </button>
+                  )}
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                    Hero Main Headline (H1)
-                  </label>
-                  <input
-                    type="text"
-                    value={siteConfig.heroHeadline}
-                    onChange={(e) =>
-                      onUpdateSiteConfig({
-                        ...siteConfig,
-                        heroHeadline: e.target.value,
-                      })
-                    }
-                    className="w-full px-3.5 py-2 text-sm font-bold text-[#001E5A] border border-slate-300 rounded-lg"
-                  />
-                </div>
+                {!isEditingSiteSettings ? (
+                  <div className="space-y-4">
+                    <div className="p-5 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-2">
+                      <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
+                        {siteConfig.heroEyebrow}
+                      </p>
+                      <h3 className="text-xl font-bold text-[#001E5A]">
+                        {siteConfig.heroHeadline}
+                      </h3>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        {siteConfig.heroSubtitle}
+                      </p>
+                      <p className="text-xs font-semibold text-[#001E5A] pt-1">
+                        Primary CTA Button: <span className="text-[#0088FF]">{siteConfig.primaryCtaLabel}</span>
+                      </p>
+                    </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                    Hero Lead Paragraph
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={siteConfig.heroSubtitle}
-                    onChange={(e) =>
-                      onUpdateSiteConfig({
-                        ...siteConfig,
-                        heroSubtitle: e.target.value,
-                      })
-                    }
-                    className="w-full px-3.5 py-2 text-xs border border-slate-300 rounded-lg"
-                  />
-                </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {[
+                        { label: 'Metric 1', val: siteConfig.stat1Value },
+                        { label: 'Metric 2', val: siteConfig.stat2Value },
+                        { label: 'Metric 3', val: siteConfig.stat3Value },
+                        { label: 'Metric 4', val: siteConfig.stat4Value },
+                      ].map((m) => (
+                        <div
+                          key={m.label}
+                          className="p-3.5 rounded-xl bg-[#F8FAFC] border border-slate-200"
+                        >
+                          <p className="text-[10px] font-mono-tabular text-slate-400 uppercase">
+                            {m.label}
+                          </p>
+                          <p className="text-sm font-mono-tabular font-bold text-[#001E5A] mt-0.5">
+                            {m.val}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Metric 1 Value
-                    </label>
-                    <input
-                      type="text"
-                      value={siteConfig.stat1Value}
-                      onChange={(e) =>
-                        onUpdateSiteConfig({
-                          ...siteConfig,
-                          stat1Value: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-1.5 text-xs font-mono-tabular font-bold border border-slate-300 rounded-lg"
-                    />
+                    <div className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                      <div>
+                        <span className="text-[10px] font-mono-tabular text-slate-400 uppercase block">
+                          Footer Agency Description
+                        </span>
+                        <p className="text-slate-700 mt-0.5">
+                          {siteConfig.footerTagline}
+                        </p>
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-mono-tabular text-slate-400 uppercase block">
+                          Footer Domain &amp; Operations Line
+                        </span>
+                        <p className="font-mono-tabular font-semibold text-[#001E5A] mt-0.5">
+                          {siteConfig.footerDomainLine}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Metric 2 Value
-                    </label>
-                    <input
-                      type="text"
-                      value={siteConfig.stat2Value}
-                      onChange={(e) =>
-                        onUpdateSiteConfig({
-                          ...siteConfig,
-                          stat2Value: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-1.5 text-xs font-mono-tabular font-bold border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Metric 3 Value
-                    </label>
-                    <input
-                      type="text"
-                      value={siteConfig.stat3Value}
-                      onChange={(e) =>
-                        onUpdateSiteConfig({
-                          ...siteConfig,
-                          stat3Value: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-1.5 text-xs font-mono-tabular font-bold border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Metric 4 Value
-                    </label>
-                    <input
-                      type="text"
-                      value={siteConfig.stat4Value}
-                      onChange={(e) =>
-                        onUpdateSiteConfig({
-                          ...siteConfig,
-                          stat4Value: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-1.5 text-xs font-mono-tabular font-bold border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                </div>
+                ) : (
+                  <div className="space-y-5 bg-[#F8FAFC] border border-[#0088FF] rounded-2xl p-5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Hero Eyebrow Line
+                        </label>
+                        <input
+                          type="text"
+                          value={siteSettingsDraft.heroEyebrow}
+                          onChange={(e) =>
+                            setSiteSettingsDraft({
+                              ...siteSettingsDraft,
+                              heroEyebrow: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Primary Hero Button Label
+                        </label>
+                        <input
+                          type="text"
+                          value={siteSettingsDraft.primaryCtaLabel}
+                          onChange={(e) =>
+                            setSiteSettingsDraft({
+                              ...siteSettingsDraft,
+                              primaryCtaLabel: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                    </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-slate-200">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Footer Agency Description
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={siteConfig.footerTagline}
-                      onChange={(e) =>
-                        onUpdateSiteConfig({
-                          ...siteConfig,
-                          footerTagline: e.target.value,
+                    <div>
+                      <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                        Hero Main Headline (H1)
+                      </label>
+                      <input
+                        type="text"
+                        value={siteSettingsDraft.heroHeadline}
+                        onChange={(e) =>
+                          setSiteSettingsDraft({
+                            ...siteSettingsDraft,
+                            heroHeadline: e.target.value,
+                          })
+                        }
+                        className="w-full px-3.5 py-2 text-sm font-bold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
+                      />
+                    </div>
+
+                    <RichTextEditor
+                      label="Hero Lead Paragraph (Rich Text Editor: Font, Size, Links, Bold)"
+                      value={siteSettingsDraft.heroSubtitle}
+                      onChange={(html) =>
+                        setSiteSettingsDraft({
+                          ...siteSettingsDraft,
+                          heroSubtitle: html,
                         })
                       }
-                      className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
+                      minHeight="130px"
                     />
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Metric 1 Value
+                        </label>
+                        <input
+                          type="text"
+                          value={siteSettingsDraft.stat1Value}
+                          onChange={(e) =>
+                            setSiteSettingsDraft({
+                              ...siteSettingsDraft,
+                              stat1Value: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-1.5 text-xs font-mono-tabular font-bold bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Metric 2 Value
+                        </label>
+                        <input
+                          type="text"
+                          value={siteSettingsDraft.stat2Value}
+                          onChange={(e) =>
+                            setSiteSettingsDraft({
+                              ...siteSettingsDraft,
+                              stat2Value: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-1.5 text-xs font-mono-tabular font-bold bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Metric 3 Value
+                        </label>
+                        <input
+                          type="text"
+                          value={siteSettingsDraft.stat3Value}
+                          onChange={(e) =>
+                            setSiteSettingsDraft({
+                              ...siteSettingsDraft,
+                              stat3Value: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-1.5 text-xs font-mono-tabular font-bold bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Metric 4 Value
+                        </label>
+                        <input
+                          type="text"
+                          value={siteSettingsDraft.stat4Value}
+                          onChange={(e) =>
+                            setSiteSettingsDraft({
+                              ...siteSettingsDraft,
+                              stat4Value: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-1.5 text-xs font-mono-tabular font-bold bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-3 border-t border-slate-200">
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Footer Agency Description
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={siteSettingsDraft.footerTagline}
+                          onChange={(e) =>
+                            setSiteSettingsDraft({
+                              ...siteSettingsDraft,
+                              footerTagline: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#001E5A] mb-1">
+                          Footer Domain &amp; Operations Line
+                        </label>
+                        <input
+                          type="text"
+                          value={siteSettingsDraft.footerDomainLine}
+                          onChange={(e) =>
+                            setSiteSettingsDraft({
+                              ...siteSettingsDraft,
+                              footerDomainLine: e.target.value,
+                            })
+                          }
+                          className="w-full px-3 py-2 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingSiteSettings(false)}
+                        className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onUpdateSiteConfig(siteSettingsDraft);
+                          setIsEditingSiteSettings(false);
+                          notifySaved(
+                            'Saved & published Global Hero, Metrics & Footer settings!'
+                          );
+                        }}
+                        className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors flex items-center gap-2 shadow-xs"
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Save &amp; Publish Settings</span>
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                      Footer Domain & Operations Line
-                    </label>
-                    <input
-                      type="text"
-                      value={siteConfig.footerDomainLine}
-                      onChange={(e) =>
-                        onUpdateSiteConfig({
-                          ...siteConfig,
-                          footerDomainLine: e.target.value,
-                        })
-                      }
-                      className="w-full px-3 py-2 text-xs font-mono-tabular border border-slate-300 rounded-lg"
-                    />
-                  </div>
-                </div>
+                )}
               </div>
             </div>
           )}

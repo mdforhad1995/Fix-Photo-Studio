@@ -19,6 +19,7 @@ import {
   ServiceEditorialBlock,
 } from '../data/studioCatalog';
 import { BeforeAfterStudioCanvas } from './StudioArtworks';
+import { RichContentRenderer } from './RichTextEditor';
 
 interface ServiceDetailPageProps {
   allServices: ServiceDefinition[];
@@ -282,9 +283,10 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
                 {activeService.title}
               </h1>
 
-              <p className="text-base text-slate-600 leading-relaxed">
-                {activeService.heroSubtitle}
-              </p>
+              <RichContentRenderer
+                content={activeService.heroSubtitle}
+                className="text-base text-slate-600 leading-relaxed"
+              />
 
               {/* Technical Spec Grid */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
@@ -403,14 +405,10 @@ export const ServiceDetailPage: React.FC<ServiceDetailPageProps> = ({
                   </h2>
 
                   <div className="border-l-[3px] border-[#0088FF] pl-5 space-y-4">
-                    {block.paragraphs.map((para, pIdx) => (
-                      <p
-                        key={pIdx}
-                        className="text-sm sm:text-[15px] text-slate-600 leading-relaxed"
-                      >
-                        {para}
-                      </p>
-                    ))}
+                    <RichContentRenderer
+                      content={block.paragraphs.join('\n\n')}
+                      className="text-sm sm:text-[15px] text-slate-600 leading-relaxed"
+                    />
                   </div>
 
                   {block.highlightBadges && block.highlightBadges.length > 0 && (

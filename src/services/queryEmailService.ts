@@ -1,4 +1,4 @@
-import { ClientQueryItem } from '../types';
+import { ClientQueryItem, UploadedClientFileItem } from '../types';
 
 export interface CreateClientQueryInput {
   clientName: string;
@@ -9,6 +9,8 @@ export interface CreateClientQueryInput {
   serviceSlug: string;
   instructions: string;
   sampleFiles?: string[];
+  sampleFilesData?: UploadedClientFileItem[];
+  clientSourceFilesUrl?: string;
   source: 'home_trial_form' | 'free_trial_popup' | 'custom_quote_popup';
   isLoggedInClient: boolean;
   routedToPortal: boolean;
@@ -19,7 +21,7 @@ export interface CreateClientQueryInput {
 export const INITIAL_CLIENT_QUERIES: ClientQueryItem[] = [
   {
     id: 'qry-seed-1',
-    queryNumber: 'FPS-QRY-4812',
+    queryNumber: 'FX-06112026',
     clientName: 'Forhad Hossain',
     clientEmail: 'clippsasia@gmail.com',
     clientPhone: '+1 (212) 555-0194',
@@ -35,15 +37,15 @@ export const INITIAL_CLIENT_QUERIES: ClientQueryItem[] = [
     status: 'new',
     clientConfirmationEmailSent: true,
     clientConfirmationSubject:
-      'Thank you for your query — FixPhoto Studio (FPS-QRY-4812)',
+      'Thank you for your query — FixPhoto Studio (FX-06112026)',
     clientConfirmationBody:
-      'Dear Forhad Hossain,\n\nThank you for your query! Our team will contact you soon.\n\nWe have received your request for Fashion & Reel Video Editing.\nReference ID: FPS-QRY-4812\nSubmitted Email: clippsasia@gmail.com\n\nBest regards,\nFixPhoto Studio Production Team\nasiaclipp@gmail.com',
+      'Dear Forhad Hossain,\n\nThank you for your query! Our team will contact you soon.\n\nWe have received your request for Fashion & Reel Video Editing.\nReference ID: FX-06112026\nSubmitted Email: clippsasia@gmail.com\n\nBest regards,\nFixPhoto Studio Production Team\nasiaclipp@gmail.com',
     adminNotificationEmailSent: true,
     adminEmailRecipient: 'asiaclipp@gmail.com',
     adminNotificationSubject:
-      '[New Client Query FPS-QRY-4812] Forhad Hossain — Fashion & Reel Video Editing',
+      '[New Client Query FX-06112026] Forhad Hossain — Fashion & Reel Video Editing',
     adminNotificationBody:
-      'New Client Query Received on FixPhoto Studio:\n\nQuery Ref: FPS-QRY-4812\nClient Name: Forhad Hossain\nClient Email: clippsasia@gmail.com\nPhone / WhatsApp: +1 (212) 555-0194\nService: Fashion & Reel Video Editing\nAccount Status: Guest Visitor (Not Logged In — Saved to Admin Queries Only)\nInstructions: Need 5 sample product clips & lookbook frames retouched with clean background isolation and natural drop shadow.',
+      'New Client Query Received on FixPhoto Studio:\n\nQuery Ref: FX-06112026\nClient Name: Forhad Hossain\nClient Email: clippsasia@gmail.com\nPhone / WhatsApp: +1 (212) 555-0194\nService: Fashion & Reel Video Editing\nAccount Status: Guest Visitor (Not Logged In — Saved to Admin Queries Only)\nInstructions: Need 5 sample product clips & lookbook frames retouched with clean background isolation and natural drop shadow.',
     createdAt: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
   },
 ];
@@ -51,8 +53,11 @@ export const INITIAL_CLIENT_QUERIES: ClientQueryItem[] = [
 export async function createAndDispatchClientQuery(
   input: CreateClientQueryInput
 ): Promise<ClientQueryItem> {
-  const randomCode = Math.floor(1000 + Math.random() * 9000);
-  const queryNumber = `FPS-QRY-${randomCode}`;
+  const now = new Date();
+  const day = String(now.getDate()).padStart(2, '0');
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const year = String(now.getFullYear());
+  const queryNumber = input.portalOrderNumber || `FX-${day}${month}${year}`;
   const adminRecipient = (
     input.adminEmailRecipient || 'asiaclipp@gmail.com'
   ).trim();
@@ -164,6 +169,8 @@ export async function createAndDispatchClientQuery(
     serviceSlug: input.serviceSlug,
     instructions: cleanInstructions,
     sampleFiles: input.sampleFiles || [],
+    sampleFilesData: input.sampleFilesData,
+    clientSourceFilesUrl: input.clientSourceFilesUrl,
     source: input.source,
     isLoggedInClient: input.isLoggedInClient,
     routedToPortal: input.routedToPortal,

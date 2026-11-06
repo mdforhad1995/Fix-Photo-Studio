@@ -61,6 +61,12 @@ export type InvoicePaymentStatus = 'pending' | 'paid';
 export type InvoicePaymentTerms = 'Monthly' | 'Project';
 export type InvoicePaymentOption = 'PayPal' | 'Bank';
 
+export interface UploadedClientFileItem {
+  name: string;
+  sizeLabel?: string;
+  dataUrl?: string;
+}
+
 export interface OrderDoc {
   id: string;
   orderNumber: string;
@@ -75,6 +81,7 @@ export interface OrderDoc {
   paymentOption?: InvoicePaymentOption;
   projectTitle: string;
   serviceCategory: ServiceCategory;
+  serviceTitle?: string;
   imageCount: number;
   turnaroundHours: number;
   outputFormat: OutputFormat;
@@ -84,9 +91,14 @@ export interface OrderDoc {
   status: OrderStatus;
   progressPercent: number;
   uploadedBatchNames: string[];
+  uploadedFilesData?: UploadedClientFileItem[];
+  clientSourceFilesUrl?: string;
   deliveryReady: boolean;
   deliveryDownloadUrl?: string;
   deliveryEmailSent?: boolean;
+  clientCompleted?: boolean;
+  clientCompletedAt?: Timestamp | Date;
+  reopenedByChat?: boolean;
   createdAt: Timestamp | Date;
   updatedAt: Timestamp | Date;
 }
@@ -174,6 +186,8 @@ export interface ClientQueryItem {
   serviceSlug: string;
   instructions: string;
   sampleFiles: string[];
+  sampleFilesData?: UploadedClientFileItem[];
+  clientSourceFilesUrl?: string;
   source: 'home_trial_form' | 'free_trial_popup' | 'custom_quote_popup';
   isLoggedInClient: boolean;
   routedToPortal: boolean;

@@ -55,6 +55,7 @@ interface ClientPortalViewProps {
   onOpenNewOrder: () => void;
   onOpenMfaModal: () => void;
   onAdvanceOrderStage: (order: OrderDoc) => Promise<void>;
+  onCompleteOrderByClient?: (order: OrderDoc) => Promise<void>;
   onSendMessage: (order: OrderDoc, body: string, attachmentName: string) => Promise<void>;
   onMarkNotificationRead: (notif: NotificationAlertDoc) => Promise<void>;
   onChangeSubscriptionPlan: (tier: PlanTier, cycle: BillingCycle) => Promise<void>;
@@ -110,6 +111,7 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
   onSignOut,
   onOpenNewOrder,
   onOpenMfaModal,
+  onCompleteOrderByClient,
   onSendMessage,
   onMarkNotificationRead,
   onChangeSubscriptionPlan,
@@ -118,7 +120,7 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
   onOpenAdminDashboard,
 }) => {
   const [portalSubTab, setPortalSubTab] = useState<
-    'engagements' | 'notifications' | 'profile'
+    'engagements' | 'completed_orders' | 'notifications' | 'profile'
   >('engagements');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'completed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -579,9 +581,21 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
     }
   };
 
-  const filteredOrders = orders.filter((o) => {
+  const activeOrdersList = orders.filter(
+    (o) => !o.clientCompleted || o.reopenedByChat
+  );
+  const completedOrdersList = orders.filter(
+    (o) => Boolean(o.clientCompleted) && !o.reopenedByChat
+  );
+
+  const baseTabOrders =
+    portalSubTab === 'completed_orders' ? completedOrdersList : activeOrdersList;
+
+  const filteredOrders = baseTabOrders.filter((o) => {
     const matchesStatus =
-      statusFilter === 'all'
+      portalSubTab === 'completed_orders'
+        ? true
+        : statusFilter === 'all'
         ? true
         : statusFilter === 'completed'
         ? o.status === 'completed'
@@ -596,19 +610,28 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
   });
 
   const activeOrder =
-    orders.find((o) => o.id === selectedOrderId) || filteredOrders[0] || orders[0] || null;
+    filteredOrders.find((o) => o.id === selectedOrderId) ||
+    filteredOrders[0] ||
+    baseTabOrders[0] ||
+    null;
 
-  const activeEngagementsCount = orders.filter((o) => o.status !== 'completed').length;
-  const unreadNotifCount = notifications.filter((n) => !n.read).length;
+  const activeEngagementsCount = activeOrdersList.length;
 
   const handleChatSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeOrder || !chatInput.trim()) return;
     setIsSendingChat(true);
     try {
+      const wasCompleted = Boolean(
+        activeOrder.clientCompleted || activeOrder.status === 'completed'
+      );
       await onSendMessage(activeOrder, chatInput.trim(), chatAttachment.trim());
       setChatInput('');
       setChatAttachment('');
+      if (wasCompleted && portalSubTab === 'completed_orders') {
+        setPortalSubTab('engagements');
+        onSelectOrder(activeOrder.id);
+      }
     } finally {
       setIsSendingChat(false);
     }
@@ -633,6 +656,9 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
     if (isOrderPendingApproval(order)) {
       return 'ORDER STATUS: PENDING';
     }
+    if (order.clientCompleted && !order.reopenedByChat) {
+      return 'COMPLETE ORDER ✓';
+    }
     const idx = getOrderStageIndex(order);
     const stageObj = PIPELINE_STAGES[idx];
     return stageObj
@@ -640,18 +666,44 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
       : order.status.replace('_', ' ').toUpperCase();
   };
 
+  // Invoice is only visible once the order reaches Stage 2 ("Start Working" -> index >= 1) or later
+  const isOrderInvoiceVisible = (order: OrderDoc): boolean => {
+    return getOrderStageIndex(order) >= 1;
+  };
+
+  const visibleNotifications = notifications.filter((notif) => {
+    if (!notif.invoiceRef) return true;
+    const linkedOrder = orders.find(
+      (o) =>
+        notif.invoiceRef === o.orderNumber ||
+        notif.invoiceRef === `INV-${o.orderNumber}` ||
+        notif.title.includes(o.orderNumber)
+    );
+    if (linkedOrder && !isOrderInvoiceVisible(linkedOrder)) {
+      return false;
+    }
+    return true;
+  });
+  const visibleUnreadNotifCount = visibleNotifications.filter((n) => !n.read).length;
+
   const getInvoiceStatus = (
     invoiceRef?: string,
     orderNumber?: string,
     notifTitle?: string
   ): InvoicePaymentStatus => {
-    if (invoiceRef && invoiceStatusMap[invoiceRef]) {
-      return invoiceStatusMap[invoiceRef];
+    if (invoiceRef) {
+      const stripped = invoiceRef.replace(/^INV-/i, '');
+      if (invoiceStatusMap[invoiceRef]) return invoiceStatusMap[invoiceRef];
+      if (invoiceStatusMap[stripped]) return invoiceStatusMap[stripped];
+      if (invoiceStatusMap[`INV-${stripped}`])
+        return invoiceStatusMap[`INV-${stripped}`];
     }
     if (orderNumber) {
-      const derivedRef = `INV-${orderNumber}`;
-      if (invoiceStatusMap[derivedRef]) return invoiceStatusMap[derivedRef];
+      const stripped = orderNumber.replace(/^INV-/i, '');
       if (invoiceStatusMap[orderNumber]) return invoiceStatusMap[orderNumber];
+      if (invoiceStatusMap[stripped]) return invoiceStatusMap[stripped];
+      if (invoiceStatusMap[`INV-${stripped}`])
+        return invoiceStatusMap[`INV-${stripped}`];
     }
     if (notifTitle && notifTitle.toUpperCase().includes('[PAID]')) {
       return 'paid';
@@ -664,10 +716,14 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
       (n) =>
         n.invoiceRef &&
         (n.title.includes(order.orderNumber) ||
+          n.invoiceRef === order.orderNumber ||
           n.invoiceRef === `INV-${order.orderNumber}`)
     );
     if (matchedNotif) {
-      setSelectedReceipt(matchedNotif);
+      setSelectedReceipt({
+        ...matchedNotif,
+        invoiceRef: order.orderNumber,
+      });
     } else {
       setSelectedReceipt({
         id: `inv_modal_${order.id}`,
@@ -676,7 +732,7 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
         title: `Order Invoice — ${order.orderNumber} (${order.projectTitle})`,
         message: `${order.imageCount} frames · ${order.outputFormat} · ${order.turnaroundHours}h SLA`,
         amountFormatted: `$${order.totalPrice.toFixed(2)} USD`,
-        invoiceRef: `INV-${order.orderNumber}`,
+        invoiceRef: order.orderNumber,
         read: true,
         createdAt: order.createdAt,
       });
@@ -1182,28 +1238,79 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
           </p>
         </div>
 
-        <div className="p-5 bg-white border border-stone-200 rounded-xl flex items-center justify-between gap-4">
-          <div>
-            <p className="text-xs text-stone-500">Your Profile & Invoice Billing Info</p>
-            <div className="flex items-center gap-2 mt-1">
-              <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0" />
-              <p className="text-lg font-bold text-stone-900 truncate">
-                {activeClientName}
-                {activeClientCompany ? ` · ${activeClientCompany}` : ''}
-              </p>
-            </div>
-            <p className="text-xs text-stone-600 mt-1 font-mono-tabular">
-              {activeClientEmail}
-              {clientSessionPhone ? ` · ${clientSessionPhone}` : ''}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsProfileModalOpen(true)}
-            className="px-3.5 py-2 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors shrink-0"
-          >
-            Your Profile →
-          </button>
+        <div className="p-5 bg-white border border-stone-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          {activeOrder ? (
+            <>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-stone-500">
+                  Real-Time Work &amp; Production Update ({activeOrder.orderNumber})
+                </p>
+                <div className="flex flex-wrap items-center gap-2 mt-1">
+                  {activeOrder.status === 'completed' &&
+                  !isOrderPendingApproval(activeOrder) ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  ) : (
+                    <Clock className="w-5 h-5 text-blue-600 shrink-0" />
+                  )}
+                  <p className="text-base sm:text-lg font-bold text-stone-900 truncate">
+                    {getOrderStageLabel(activeOrder)}
+                  </p>
+                  <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200 font-mono-tabular text-xs font-bold">
+                    {isOrderPendingApproval(activeOrder)
+                      ? '0%'
+                      : `${activeOrder.progressPercent}%`}{' '}
+                    Complete
+                  </span>
+                </div>
+                <p className="text-xs text-stone-600 mt-1 font-mono-tabular truncate">
+                  {activeOrder.projectTitle} · {activeOrder.imageCount} frames ·{' '}
+                  {activeOrder.turnaroundHours}h SLA
+                </p>
+              </div>
+
+              {activeOrder.deliveryDownloadUrl?.trim() ? (
+                <a
+                  href={
+                    activeOrder.deliveryDownloadUrl.trim().startsWith('http')
+                      ? activeOrder.deliveryDownloadUrl.trim()
+                      : `https://${activeOrder.deliveryDownloadUrl.trim()}`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors flex items-center gap-1.5 shrink-0"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download Ready Files →</span>
+                </a>
+              ) : (
+                <span className="px-3 py-1.5 rounded-lg bg-stone-100 border border-stone-200 text-xs font-mono-tabular font-semibold text-stone-700 shrink-0">
+                  {isOrderPendingApproval(activeOrder)
+                    ? 'Awaiting Admin Receipt'
+                    : `Stage ${getOrderStageIndex(activeOrder) + 1} of 4`}
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              <div>
+                <p className="text-xs text-stone-500">
+                  Real-Time Work &amp; Production Update
+                </p>
+                <div className="flex items-center gap-2 mt-1">
+                  <Clock className="w-5 h-5 text-blue-600 shrink-0" />
+                  <p className="text-base sm:text-lg font-bold text-stone-900">
+                    No Active Work in Queue (0 In Progress)
+                  </p>
+                </div>
+                <p className="text-xs text-stone-600 mt-1 font-mono-tabular">
+                  1. Order Status → 2. Start Working → 3. Quality Control → 4. Ready for Delivery
+                </p>
+              </div>
+              <span className="px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-xs font-mono-tabular font-semibold text-blue-800 shrink-0">
+                Live 4-Stage Tracker
+              </span>
+            </>
+          )}
         </div>
       </div>
 
@@ -1212,14 +1319,36 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
         <div className="flex flex-wrap items-center gap-1 p-1 bg-stone-200/70 rounded-lg">
           <button
             type="button"
-            onClick={() => setPortalSubTab('engagements')}
+            onClick={() => {
+              setPortalSubTab('engagements');
+              if (activeOrdersList[0]) {
+                onSelectOrder(activeOrdersList[0].id);
+              }
+            }}
             className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 ${
               portalSubTab === 'engagements'
                 ? 'bg-white text-stone-900 shadow-xs'
                 : 'text-stone-600 hover:text-stone-900'
             }`}
           >
-            Active Engagements & Live Chat ({orders.length})
+            Active Engagements & Live Chat ({activeOrdersList.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setPortalSubTab('completed_orders');
+              if (completedOrdersList[0]) {
+                onSelectOrder(completedOrdersList[0].id);
+              }
+            }}
+            className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
+              portalSubTab === 'completed_orders'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-stone-600 hover:text-stone-900'
+            }`}
+          >
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Complete Order ({completedOrdersList.length})</span>
           </button>
           <button
             type="button"
@@ -1230,23 +1359,12 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                 : 'text-stone-600 hover:text-stone-900'
             }`}
           >
-            Notifications & Payment Receipts ({unreadNotifCount} Unread)
-          </button>
-          <button
-            type="button"
-            onClick={() => setPortalSubTab('profile')}
-            className={`px-4 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 ${
-              portalSubTab === 'profile'
-                ? 'bg-white text-stone-900 shadow-xs'
-                : 'text-stone-600 hover:text-stone-900'
-            }`}
-          >
-            <User className="w-3.5 h-3.5 text-blue-700" />
-            <span>Your Profile</span>
+            Notifications & Payment Receipts ({visibleUnreadNotifCount} Unread)
           </button>
         </div>
 
-        {portalSubTab === 'engagements' && (
+        {(portalSubTab === 'engagements' ||
+          portalSubTab === 'completed_orders') && (
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1259,34 +1377,43 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
               />
             </div>
 
-            <div className="flex items-center gap-1 p-1 bg-stone-200/70 rounded-lg">
-              {(['all', 'active', 'completed'] as const).map((st) => (
-                <button
-                  key={st}
-                  type="button"
-                  onClick={() => setStatusFilter(st)}
-                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
-                    statusFilter === st
-                      ? 'bg-white text-stone-900 shadow-xs'
-                      : 'text-stone-600 hover:text-stone-900'
-                  }`}
-                >
-                  {st === 'all' ? 'All' : st === 'active' ? 'In Production' : 'Completed'}
-                </button>
-              ))}
-            </div>
+            {portalSubTab === 'engagements' && (
+              <div className="flex items-center gap-1 p-1 bg-stone-200/70 rounded-lg">
+                {(['all', 'active', 'completed'] as const).map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setStatusFilter(st)}
+                    className={`px-3 py-1 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                      statusFilter === st
+                        ? 'bg-white text-stone-900 shadow-xs'
+                        : 'text-stone-600 hover:text-stone-900'
+                    }`}
+                  >
+                    {st === 'all'
+                      ? 'All'
+                      : st === 'active'
+                      ? 'In Production'
+                      : 'Ready for Delivery'}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* SUB-TAB 1: ENGAGEMENTS, REAL-TIME TRACKER & INTEGRATED CHAT */}
-      {portalSubTab === 'engagements' && (
+      {/* SUB-TAB 1 & COMPLETE ORDER TAB: ENGAGEMENTS, REAL-TIME TRACKER & INTEGRATED PER-ORDER CHAT */}
+      {(portalSubTab === 'engagements' ||
+        portalSubTab === 'completed_orders') && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Left 4 Columns: Engagement Queue List */}
           <div className="lg:col-span-4 bg-white border border-stone-200 rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-stone-200 flex items-center justify-between">
               <span className="text-xs font-semibold text-stone-900">
-                Production Queue ({filteredOrders.length})
+                {portalSubTab === 'completed_orders'
+                  ? `Complete Order List (${filteredOrders.length})`
+                  : `Production Queue (${filteredOrders.length})`}
               </span>
               <span className="text-[11px] font-mono-tabular text-stone-500">
                 Select to inspect
@@ -1354,15 +1481,17 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                           {order.imageCount} frames · {order.turnaroundHours}h SLA
                         </span>
                         <div className="flex items-center gap-1.5">
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                              orderInvStatus === 'paid'
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : 'bg-amber-50 text-amber-700 border border-amber-200'
-                            }`}
-                          >
-                            INV: {orderInvStatus.toUpperCase()}
-                          </span>
+                          {isOrderInvoiceVisible(order) && (
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                orderInvStatus === 'paid'
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              }`}
+                            >
+                              INV: {orderInvStatus.toUpperCase()}
+                            </span>
+                          )}
                           <span className="font-semibold text-stone-900">
                             ${order.totalPrice.toFixed(2)}
                           </span>
@@ -1447,28 +1576,30 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => openOrderInvoiceModal(activeOrder)}
-                      className={`px-3.5 py-2 text-xs font-semibold rounded-lg border transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
-                        getInvoiceStatus(
-                          `INV-${activeOrder.orderNumber}`,
-                          activeOrder.orderNumber
-                        ) === 'paid'
-                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
-                          : 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
-                      }`}
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                      <span>
-                        Invoice (
-                        {getInvoiceStatus(
-                          `INV-${activeOrder.orderNumber}`,
-                          activeOrder.orderNumber
-                        ).toUpperCase()}
-                        )
-                      </span>
-                    </button>
+                    {isOrderInvoiceVisible(activeOrder) && (
+                      <button
+                        type="button"
+                        onClick={() => openOrderInvoiceModal(activeOrder)}
+                        className={`px-3.5 py-2 text-xs font-semibold rounded-lg border transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                          getInvoiceStatus(
+                            `INV-${activeOrder.orderNumber}`,
+                            activeOrder.orderNumber
+                          ) === 'paid'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                            : 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                        }`}
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        <span>
+                          Invoice (
+                          {getInvoiceStatus(
+                            `INV-${activeOrder.orderNumber}`,
+                            activeOrder.orderNumber
+                          ).toUpperCase()}
+                          )
+                        </span>
+                      </button>
+                    )}
 
                     {activeOrder.deliveryDownloadUrl?.trim() ? (
                       <a
@@ -1555,21 +1686,43 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                       )}
                     </div>
 
-                    {activeOrder.deliveryDownloadUrl?.trim() && (
-                      <a
-                        href={
-                          activeOrder.deliveryDownloadUrl.trim().startsWith('http')
-                            ? activeOrder.deliveryDownloadUrl.trim()
-                            : `https://${activeOrder.deliveryDownloadUrl.trim()}`
-                        }
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center justify-center gap-2 shrink-0 shadow-xs transition-colors"
-                      >
-                        <Download className="w-4 h-4" />
-                        <span>Click to Download Files →</span>
-                      </a>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      {activeOrder.deliveryDownloadUrl?.trim() && (
+                        <a
+                          href={
+                            activeOrder.deliveryDownloadUrl.trim().startsWith('http')
+                              ? activeOrder.deliveryDownloadUrl.trim()
+                              : `https://${activeOrder.deliveryDownloadUrl.trim()}`
+                          }
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold inline-flex items-center justify-center gap-2 shrink-0 shadow-xs transition-colors"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>Click to Download Files →</span>
+                        </a>
+                      )}
+
+                      {activeOrder.status === 'completed' &&
+                        !isOrderPendingApproval(activeOrder) &&
+                        (!activeOrder.clientCompleted || activeOrder.reopenedByChat) &&
+                        onCompleteOrderByClient && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await onCompleteOrderByClient(activeOrder);
+                              setDownloadFeedback(
+                                `Order ${activeOrder.orderNumber} is now marked Complete (Stage 05) and moved to your Complete Order menu!`
+                              );
+                              setPortalSubTab('completed_orders');
+                            }}
+                            className="px-4 py-2.5 rounded-lg bg-[#001E5A] hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center justify-center gap-2 shrink-0 shadow-xs transition-colors"
+                          >
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                            <span>✓ Complete This Order</span>
+                          </button>
+                        )}
+                    </div>
                   </div>
                 )}
 
@@ -1580,16 +1733,127 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                   </div>
                 )}
 
-                {/* 4-Stage Real-Time Production Stage Progression (Managed by Studio Admin) */}
+                {/* Per-Order Individual Live Chat & Discussion Thread (Placed directly inside the Order Card above Stages as requested) */}
+                <div className="border border-blue-200 rounded-xl overflow-hidden bg-white shadow-2xs">
+                  <div className="px-5 py-3 bg-[#F5F9FD] border-b border-blue-200 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-xs font-bold text-[#001E5A]">
+                        Order Live Chat & Direct Discussion — {activeOrder.orderNumber} ({activeOrder.projectTitle})
+                      </h3>
+                      <p className="text-[11px] text-stone-600">
+                        Individual chat thread for Order <strong>{activeOrder.orderNumber}</strong> · Messages sync directly with Studio Admin
+                      </p>
+                    </div>
+                    <span className="px-2.5 py-0.5 rounded bg-blue-100 text-blue-900 font-mono-tabular font-bold text-[10px]">
+                      Order {activeOrder.orderNumber} Chat ({messages.length})
+                    </span>
+                  </div>
+
+                  <div className="p-4 space-y-3 max-h-64 overflow-y-auto bg-stone-50/60">
+                    {messages.length === 0 ? (
+                      <p className="text-xs text-stone-500 text-center py-4">
+                        No messages for Order <strong>{activeOrder.orderNumber}</strong> yet. Send a message below to discuss this order with Studio Admin.
+                      </p>
+                    ) : (
+                      messages.map((msg) => {
+                        const isClient = msg.senderRole === 'client';
+                        return (
+                          <div
+                            key={msg.id}
+                            className={`flex flex-col ${isClient ? 'items-end' : 'items-start'}`}
+                          >
+                            <div className="flex items-center gap-2 text-[11px] text-stone-500 mb-1 font-mono-tabular">
+                              <span className="font-semibold text-stone-800">{msg.senderName}</span>
+                              <span>·</span>
+                              <span>{msg.senderRole === 'specialist' ? 'Studio Admin' : 'Client'}</span>
+                              <span>·</span>
+                              <span>{formatTimestamp(msg.createdAt)}</span>
+                            </div>
+                            <div
+                              className={`max-w-xl rounded-xl px-4 py-2.5 text-xs leading-relaxed border ${
+                                isClient
+                                  ? 'bg-[#001E5A] text-white border-[#001E5A]'
+                                  : 'bg-white text-stone-800 border-blue-200 shadow-2xs'
+                              }`}
+                            >
+                              <p>{msg.body}</p>
+                              {msg.attachmentName && (
+                                <p className="mt-1.5 pt-1.5 border-t border-stone-300/30 font-mono-tabular text-[11px] opacity-90 break-all">
+                                  Attachment / Link: {msg.attachmentName}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <form
+                    onSubmit={handleChatSubmit}
+                    className="p-3 bg-white border-t border-blue-200 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5"
+                  >
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      maxLength={1500}
+                      placeholder={`Write a message about Order ${activeOrder.orderNumber} to Studio Admin...`}
+                      className="flex-1 px-3.5 py-2 text-xs border border-stone-300 rounded-lg focus:outline-none focus:border-blue-700"
+                    />
+                    {chatAttachment ? (
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-xs font-mono-tabular text-blue-900 shrink-0 max-w-52">
+                        <span className="truncate">{chatAttachment}</span>
+                        <button
+                          type="button"
+                          onClick={() => setChatAttachment('')}
+                          className="text-blue-600 hover:text-red-600 shrink-0"
+                          aria-label="Remove attached file"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="px-3 py-2 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 border border-stone-300 rounded-lg cursor-pointer transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0">
+                        <UploadCloud className="w-3.5 h-3.5 text-blue-700" />
+                        <span>Attach File</span>
+                        <input
+                          type="file"
+                          accept="image/*,video/*,.pdf,.zip,.psd,.tif,.tiff,.raw,.cr2,.cr3,.nef,.raf,.dng,.mp4,.mov"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setChatAttachment(file.name.slice(0, 140));
+                            }
+                            e.target.value = '';
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={isSendingChat || !chatInput.trim()}
+                      className="px-4 py-2 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 disabled:opacity-50 rounded-lg transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>Send Reply</span>
+                    </button>
+                  </form>
+                </div>
+
+                {/* 5-Stage Real-Time Production Stage Progression (1-4 Managed by Admin, 5 Completed by Customer) */}
                 <div>
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs mb-3">
                     <span className="font-semibold text-stone-900">
-                      Real-Time Production Stage Progression (Managed by Studio Admin)
+                      Real-Time Production Stage Progression (5 Stages)
                     </span>
                     <span
                       className={`font-mono-tabular font-semibold ${
                         isOrderPendingApproval(activeOrder)
                           ? 'text-amber-700'
+                          : activeOrder.clientCompleted && !activeOrder.reopenedByChat
+                          ? 'text-emerald-700'
                           : 'text-blue-700'
                       }`}
                     >
@@ -1599,14 +1863,16 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
                     {PIPELINE_STAGES.map((stage, idx) => {
                       const pendingApproval = isOrderPendingApproval(activeOrder);
                       const currentStageIdx = getOrderStageIndex(activeOrder);
                       const isDone = !pendingApproval && idx <= currentStageIdx;
-                      const isCurrent = !pendingApproval && idx === currentStageIdx;
+                      const isCurrent =
+                        !pendingApproval &&
+                        idx === currentStageIdx &&
+                        !(activeOrder.clientCompleted && !activeOrder.reopenedByChat);
 
-                      // Stage 01 displays "Order Status: Pending" when pending, or "Order Status: Received" when received
                       const stageTitle =
                         idx === 0
                           ? pendingApproval
@@ -1646,13 +1912,76 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                         </div>
                       );
                     })}
+
+                    {/* Stage 05: Complete Order (Customer Action) */}
+                    {(() => {
+                      const pendingApproval = isOrderPendingApproval(activeOrder);
+                      const isReadyForCompletion =
+                        !pendingApproval &&
+                        activeOrder.status === 'completed' &&
+                        (!activeOrder.clientCompleted || activeOrder.reopenedByChat);
+                      const isCompletedByClient =
+                        !pendingApproval &&
+                        Boolean(activeOrder.clientCompleted) &&
+                        !activeOrder.reopenedByChat;
+
+                      return (
+                        <div
+                          className={`p-3.5 rounded-xl border text-xs transition-colors flex flex-col justify-between ${
+                            isCompletedByClient
+                              ? 'border-emerald-500 bg-emerald-50 text-emerald-950 shadow-2xs'
+                              : isReadyForCompletion
+                              ? 'border-blue-700 bg-blue-50/60 text-stone-900 shadow-2xs'
+                              : 'border-stone-200 bg-stone-50 text-stone-500'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between font-mono-tabular text-[11px]">
+                              <span className="font-bold">05.</span>
+                              {isCompletedByClient ? (
+                                <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                              ) : (
+                                <Clock className="w-4 h-4 text-stone-400" />
+                              )}
+                            </div>
+                            <p className="font-bold mt-1.5 leading-snug">
+                              Complete Order
+                            </p>
+                            <p className="text-[11px] opacity-80 mt-0.5">
+                              {isCompletedByClient
+                                ? 'Order completed and archived in Complete Order menu.'
+                                : isReadyForCompletion
+                                ? 'Review your files & click below to complete this order.'
+                                : 'Unlocks once Stage 04 (Ready for Delivery) is ready.'}
+                            </p>
+                          </div>
+
+                          {isReadyForCompletion && onCompleteOrderByClient && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await onCompleteOrderByClient(activeOrder);
+                                setDownloadFeedback(
+                                  `Order ${activeOrder.orderNumber} marked Complete and moved to Complete Order!`
+                                );
+                                setPortalSubTab('completed_orders');
+                              }}
+                              className="mt-2.5 w-full py-1.5 px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] transition-colors flex items-center justify-center gap-1 shadow-2xs"
+                            >
+                              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                              <span>Complete This Order</span>
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
 
                 {/* Technical Specs & Uploaded Manifest */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-stone-200 text-xs">
                   <div>
-                    <p className="font-semibold text-stone-900">Retoucher Style Brief</p>
+                    <p className="font-semibold text-stone-900">Working Instruction</p>
                     <p className="text-stone-600 mt-1 leading-relaxed">
                       {activeOrder.instructions || 'Standard studio SOP applied.'}
                     </p>
@@ -1670,115 +1999,6 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                     </div>
                   </div>
                 </div>
-              </div>
-
-              {/* Integrated Direct Chat Support */}
-              <div className="bg-white border border-stone-200 rounded-xl overflow-hidden">
-                <div className="px-6 py-4 border-b border-stone-200 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-stone-900">
-                      Direct Studio Specialist Chat — {activeOrder.orderNumber}
-                    </h3>
-                    <p className="text-xs text-stone-500">
-                      Assigned Lead: Elena Rostova (Senior Horology & Apparel Retoucher) · Response SLA &lt; 5 min
-                    </p>
-                  </div>
-                  <span className="text-xs font-mono-tabular text-stone-600">
-                    End-to-End Order Thread
-                  </span>
-                </div>
-
-                <div className="p-6 space-y-4 max-h-80 overflow-y-auto bg-stone-50/50">
-                  {messages.length === 0 ? (
-                    <p className="text-xs text-stone-500 text-center py-6">
-                      No messages in this order thread yet. Send a note to your assigned retouching pod below.
-                    </p>
-                  ) : (
-                    messages.map((msg) => {
-                      const isClient = msg.senderRole === 'client';
-                      return (
-                        <div
-                          key={msg.id}
-                          className={`flex flex-col ${isClient ? 'items-end' : 'items-start'}`}
-                        >
-                          <div className="flex items-center gap-2 text-[11px] text-stone-500 mb-1 font-mono-tabular">
-                            <span className="font-semibold text-stone-700">{msg.senderName}</span>
-                            <span>·</span>
-                            <span>{msg.senderRole === 'specialist' ? 'Lead Retoucher' : 'Client'}</span>
-                            <span>·</span>
-                            <span>{formatTimestamp(msg.createdAt)}</span>
-                          </div>
-                          <div
-                            className={`max-w-xl rounded-xl px-4 py-2.5 text-xs leading-relaxed border ${
-                              isClient
-                                ? 'bg-stone-900 text-white border-stone-900'
-                                : 'bg-white text-stone-800 border-stone-200'
-                            }`}
-                          >
-                            <p>{msg.body}</p>
-                            {msg.attachmentName && (
-                              <p className="mt-1.5 pt-1.5 border-t border-stone-300/30 font-mono-tabular text-[11px] opacity-90">
-                                Attached Reference: {msg.attachmentName}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-                <form
-                  onSubmit={handleChatSubmit}
-                  className="p-4 bg-white border-t border-stone-200 flex flex-col sm:flex-row items-stretch sm:items-center gap-3"
-                >
-                  <input
-                    type="text"
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    maxLength={1500}
-                    placeholder="Message Elena Rostova regarding clipping paths, color profile, or crop specs..."
-                    className="flex-1 px-3.5 py-2 text-xs border border-stone-300 rounded-lg focus:outline-none focus:border-blue-700"
-                  />
-                  {chatAttachment ? (
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-xs font-mono-tabular text-blue-900 shrink-0 max-w-52">
-                      <span className="truncate">{chatAttachment}</span>
-                      <button
-                        type="button"
-                        onClick={() => setChatAttachment('')}
-                        className="text-blue-600 hover:text-red-600 shrink-0"
-                        aria-label="Remove attached file"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ) : (
-                    <label className="px-3 py-2 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 border border-stone-300 rounded-lg cursor-pointer transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0">
-                      <UploadCloud className="w-3.5 h-3.5 text-blue-700" />
-                      <span>Upload File</span>
-                      <input
-                        type="file"
-                        accept="image/*,video/*,.pdf,.zip,.psd,.tif,.tiff,.raw,.cr2,.cr3,.nef,.raf,.dng,.mp4,.mov"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
-                          if (file) {
-                            setChatAttachment(file.name.slice(0, 140));
-                          }
-                          e.target.value = '';
-                        }}
-                        className="hidden"
-                      />
-                    </label>
-                  )}
-                  <button
-                    type="submit"
-                    disabled={isSendingChat || !chatInput.trim()}
-                    className="px-4 py-2 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 disabled:opacity-50 rounded-lg transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Send Message</span>
-                  </button>
-                </form>
               </div>
             </div>
           )}
@@ -1799,13 +2019,13 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
             </div>
             <div className="flex items-center gap-3">
               <span className="text-xs font-mono-tabular text-stone-600">
-                {notifications.length} Total Events
+                {visibleNotifications.length} Total Events
               </span>
             </div>
           </div>
 
           <div className="divide-y divide-stone-200">
-            {notifications.map((notif) => {
+            {visibleNotifications.map((notif) => {
               const hasInvoice = Boolean(notif.invoiceRef);
               const invStatus = hasInvoice
                 ? getInvoiceStatus(notif.invoiceRef, undefined, notif.title)
@@ -2294,9 +2514,15 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
             );
             const linkedOrder = orders.find(
               (o) =>
+                selectedReceipt.invoiceRef === o.orderNumber ||
                 selectedReceipt.invoiceRef === `INV-${o.orderNumber}` ||
                 selectedReceipt.title.includes(o.orderNumber)
             );
+            const displayInvoiceNo = (
+              linkedOrder?.orderNumber ||
+              selectedReceipt.invoiceRef ||
+              ''
+            ).replace(/^INV-/i, '');
 
             const billFromCompany =
               invoicePaymentInfo.companyName || 'Fix Photo Studio.';
@@ -2374,8 +2600,10 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
 
             const serviceDescription = linkedOrder
               ? `${linkedOrder.projectTitle} (${
+                  linkedOrder.serviceTitle ||
                   STUDIO_SERVICES.find((s) => s.id === linkedOrder.serviceCategory)
-                    ?.shortNavTitle || linkedOrder.serviceCategory
+                    ?.shortNavTitle ||
+                  linkedOrder.serviceCategory
                 })`
               : selectedReceipt.title;
 
@@ -2401,16 +2629,28 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
 
             const rawInstructions =
               invoicePaymentInfo.paymentInstructions ||
-              `Please include your Invoice Reference ID (${selectedReceipt.invoiceRef}) in the payment memo. Once payment is sent, our billing desk will verify and update your invoice status from PENDING to PAID in the Client Portal.`;
-            const dynamicPaymentInstructions = rawInstructions.replace(
-              /INV-FPS-2026-XXXX/gi,
-              selectedReceipt.invoiceRef
-            );
+              `Please include your Invoice Reference ID (${displayInvoiceNo}) in the payment memo. Once payment is sent, our billing desk will verify and update your invoice status from PENDING to PAID in the Client Portal.`;
+            const dynamicPaymentInstructions = rawInstructions
+              .replace(/INV-FPS-2026-XXXX/gi, displayInvoiceNo)
+              .replace(/^INV-/gi, '');
+
+            const cleanedInvoiceTermsNote = (
+              invoicePaymentInfo.invoiceNotesAndTerms || ''
+            )
+              .replace(
+                /All deliverables include dual-stage 400% QA verification and lifetime archive warranty\.?/gi,
+                ''
+              )
+              .replace(
+                /Official Commercial Invoice issued by Fix Photo Studio\.?/gi,
+                ''
+              )
+              .trim();
 
             const handleDownloadInvoicePdfFile = () => {
               downloadCommercialInvoicePdf({
-                invoiceRef: selectedReceipt.invoiceRef,
-                orderNumber: linkedOrder?.orderNumber,
+                invoiceRef: displayInvoiceNo,
+                orderNumber: linkedOrder?.orderNumber || displayInvoiceNo,
                 issueDate: formatTimestamp(selectedReceipt.createdAt),
                 status: modalInvoiceStatus,
                 paymentTerms: effectivePaymentTerms,
@@ -2447,7 +2687,7 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                 paypalEmail: resolvedPayPalEmail,
                 bankDetails: resolvedBankDetails,
                 paymentInstructions: dynamicPaymentInstructions,
-                invoiceNotesAndTerms: invoicePaymentInfo.invoiceNotesAndTerms,
+                invoiceNotesAndTerms: cleanedInvoiceTermsNote,
               });
             };
 
@@ -2505,17 +2745,15 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                         <p>
                           <span className="text-stone-500">INVOICE NO: </span>
                           <strong className="text-stone-900">
-                            {selectedReceipt.invoiceRef}
+                            {displayInvoiceNo}
                           </strong>
                         </p>
-                        {linkedOrder && (
-                          <p>
-                            <span className="text-stone-500">ORDER REF: </span>
-                            <strong className="text-stone-900">
-                              {linkedOrder.orderNumber}
-                            </strong>
-                          </p>
-                        )}
+                        <p>
+                          <span className="text-stone-500">ORDER REF: </span>
+                          <strong className="text-stone-900">
+                            {linkedOrder?.orderNumber || displayInvoiceNo}
+                          </strong>
+                        </p>
                         <p>
                           <span className="text-stone-500">ISSUE DATE: </span>
                           <span className="text-stone-900">
@@ -2769,7 +3007,7 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                         </span>
                         <span>·</span>
                         <span className="text-blue-700 font-semibold">
-                          Ref: {selectedReceipt.invoiceRef}
+                          Ref: {displayInvoiceNo}
                         </span>
                       </div>
                     </div>
@@ -2842,12 +3080,12 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                       {dynamicPaymentInstructions}
                     </p>
 
-                    {invoicePaymentInfo.invoiceNotesAndTerms && (
+                    {cleanedInvoiceTermsNote && (
                       <p className="text-[11px] text-stone-500 leading-relaxed border-t border-stone-200 pt-2">
                         <strong className="text-stone-700">
                           Terms & Notes:{' '}
                         </strong>
-                        {invoicePaymentInfo.invoiceNotesAndTerms}
+                        {cleanedInvoiceTermsNote}
                       </p>
                     )}
                   </div>

@@ -15,6 +15,7 @@ import {
   ServiceCategory,
   OutputFormat,
   BackgroundSpec,
+  UploadedClientFileItem,
 } from '../types';
 import { ServiceDefinition } from '../data/studioCatalog';
 
@@ -32,6 +33,7 @@ interface FreeTrialPageProps {
   onSubmitTrialOrder: (payload: {
     projectTitle: string;
     serviceCategory: ServiceCategory;
+    serviceTitle?: string;
     imageCount: number;
     turnaroundHours: number;
     outputFormat: OutputFormat;
@@ -39,6 +41,7 @@ interface FreeTrialPageProps {
     instructions: string;
     totalPrice: number;
     uploadedBatchNames: string[];
+    uploadedFilesData?: UploadedClientFileItem[];
     clientName?: string;
     clientEmail?: string;
     clientPhone?: string;
@@ -53,6 +56,7 @@ interface FreeTrialPageProps {
     serviceSlug: string;
     instructions: string;
     sampleFiles: string[];
+    sampleFilesData?: UploadedClientFileItem[];
   }) => Promise<{ queryNumber: string }>;
   onExploreService?: (slug: string) => void;
   onBackToHome?: () => void;
@@ -64,6 +68,7 @@ interface TrialUploadFile {
   sizeLabel: string;
   progress: number;
   done: boolean;
+  dataUrl?: string;
 }
 
 export const FreeTrialPage: React.FC<FreeTrialPageProps> = ({
@@ -189,20 +194,40 @@ export const FreeTrialPage: React.FC<FreeTrialPageProps> = ({
       );
     }
 
-    const incoming: TrialUploadFile[] = incomingArray
-      .slice(0, remainingSlots)
-      .map((f, idx) => ({
-        id: `tr_up_${Date.now()}_${idx}`,
-        name: f.name.slice(0, 120),
-        sizeLabel: `${Math.max(0.1, Number((f.size / (1024 * 1024)).toFixed(1)))} MB`,
-        progress: 18,
-        done: false,
-      }));
+    const sliced = incomingArray.slice(0, remainingSlots);
+    const ts = Date.now();
+    const incoming: TrialUploadFile[] = sliced.map((f, idx) => ({
+      id: `tr_up_${ts}_${idx}`,
+      name: f.name.slice(0, 120),
+      sizeLabel: `${Math.max(0.1, Number((f.size / (1024 * 1024)).toFixed(1)))} MB`,
+      progress: 18,
+      done: false,
+    }));
 
     setTrialFiles((prev) => {
       const updated = [...prev, ...incoming].slice(0, maxAllowedFiles);
       setTrialCount(Math.min(maxAllowedFiles, Math.max(1, updated.length)));
       return updated;
+    });
+
+    sliced.forEach((f, idx) => {
+      const entryId = `tr_up_${ts}_${idx}`;
+      try {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            const dataUrl = reader.result;
+            setTrialFiles((prev) =>
+              prev.map((item) =>
+                item.id === entryId ? { ...item, dataUrl } : item
+              )
+            );
+          }
+        };
+        reader.readAsDataURL(f);
+      } catch {
+        // ignore
+      }
     });
   };
 
@@ -255,8 +280,17 @@ export const FreeTrialPage: React.FC<FreeTrialPageProps> = ({
     setIsSubmitting(true);
     try {
       const sampleFileNames = trialFiles.map((f) => f.name);
+      const sampleFilesData: UploadedClientFileItem[] = trialFiles.map((f) => ({
+        name: f.name,
+        sizeLabel: f.sizeLabel,
+        dataUrl: f.dataUrl,
+      }));
 
-      let qNum = `FPS-QRY-${Math.floor(1000 + Math.random() * 9000)}`;
+      let qNum = `FX-${new Date().getDate().toString().padStart(2, '0')}${(
+        new Date().getMonth() + 1
+      )
+        .toString()
+        .padStart(2, '0')}${new Date().getFullYear()}`;
       if (onSubmitPublicQuery) {
         const res = await onSubmitPublicQuery({
           clientName: effectiveName,
@@ -269,6 +303,7 @@ export const FreeTrialPage: React.FC<FreeTrialPageProps> = ({
             instructions.trim() ||
             `Free ${division === 'video_editing' ? 'Video Editing' : 'Photo Editing'} Trial request for ${activeServiceObj.shortNavTitle}.`,
           sampleFiles: sampleFileNames,
+          sampleFilesData,
         });
         qNum = res.queryNumber;
       }
@@ -276,22 +311,21 @@ export const FreeTrialPage: React.FC<FreeTrialPageProps> = ({
       await onSubmitTrialOrder({
         projectTitle: `FREE ${
           division === 'video_editing' ? 'VIDEO' : '5-IMAGE'
-        } TRIAL (${qNum}) — ${activeServiceObj.shortNavTitle} · ${
+        } TRIAL — ${activeServiceObj.shortNavTitle} (${
           effectiveCompany || effectiveName
-        }`,
+        })`,
         serviceCategory: activeServiceObj.id,
+        serviceTitle: activeServiceObj.shortNavTitle,
         imageCount: Math.min(5, Math.max(1, trialCount)),
         turnaroundHours,
         outputFormat,
         backgroundSpec,
-        instructions: `[FREE TRIAL · ${effectiveName} <${effectiveEmail}>${
-          effectivePhone ? ` · Tel: ${effectivePhone}` : ''
-        }${effectiveCompany ? ` · Co: ${effectiveCompany}` : ''}] ${
+        instructions:
           instructions.trim() ||
-          `Complimentary trial for ${activeServiceObj.shortNavTitle}.`
-        }`,
+          `Complimentary trial for ${activeServiceObj.shortNavTitle}.`,
         totalPrice: 0,
         uploadedBatchNames: sampleFileNames,
+        uploadedFilesData: sampleFilesData,
         clientName: effectiveName,
         clientEmail: effectiveEmail,
         clientPhone: effectivePhone,
@@ -645,9 +679,7 @@ export const FreeTrialPage: React.FC<FreeTrialPageProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-[#001E5A] mb-1">
-                {division === 'video_editing'
-                  ? 'Video Editing Brief & Color / Cut Instructions'
-                  : 'Retouching Brief & Layer Instructions'}
+                Working Instruction
               </label>
               <textarea
                 rows={2}

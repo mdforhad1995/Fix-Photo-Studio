@@ -14,6 +14,7 @@ import {
   ServiceCategory,
   OutputFormat,
   BackgroundSpec,
+  UploadedClientFileItem,
 } from '../types';
 import { ServiceDefinition } from '../data/studioCatalog';
 
@@ -31,6 +32,7 @@ interface GetQuotePageProps {
   onSubmitQuoteOrder: (payload: {
     projectTitle: string;
     serviceCategory: ServiceCategory;
+    serviceTitle?: string;
     imageCount: number;
     turnaroundHours: number;
     outputFormat: OutputFormat;
@@ -38,6 +40,7 @@ interface GetQuotePageProps {
     instructions: string;
     totalPrice: number;
     uploadedBatchNames: string[];
+    uploadedFilesData?: UploadedClientFileItem[];
     clientName?: string;
     clientEmail?: string;
     clientPhone?: string;
@@ -52,6 +55,7 @@ interface GetQuotePageProps {
     serviceSlug: string;
     instructions: string;
     sampleFiles: string[];
+    sampleFilesData?: UploadedClientFileItem[];
   }) => Promise<{ queryNumber: string }>;
   onOpenFreeTrial?: () => void;
   onBackToHome?: () => void;
@@ -115,6 +119,7 @@ export const GetQuotePage: React.FC<GetQuotePageProps> = ({
       sizeLabel: string;
       progress: number;
       done: boolean;
+      dataUrl?: string;
     }>
   >([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
@@ -218,8 +223,10 @@ export const GetQuotePage: React.FC<GetQuotePageProps> = ({
       );
     }
 
-    const added = incoming.slice(0, remainingSlots).map((f, idx) => ({
-      id: `qf_${Date.now()}_${idx}`,
+    const sliced = incoming.slice(0, remainingSlots);
+    const ts = Date.now();
+    const added = sliced.map((f, idx) => ({
+      id: `qf_${ts}_${idx}`,
       name: f.name.slice(0, 120),
       sizeLabel: `${Math.max(0.1, Number((f.size / (1024 * 1024)).toFixed(1)))} MB`,
       progress: 18,
@@ -227,6 +234,26 @@ export const GetQuotePage: React.FC<GetQuotePageProps> = ({
     }));
 
     setSampleFiles((prev) => [...prev, ...added].slice(0, 5));
+
+    sliced.forEach((f, idx) => {
+      const entryId = `qf_${ts}_${idx}`;
+      try {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            const dataUrl = reader.result;
+            setSampleFiles((prev) =>
+              prev.map((item) =>
+                item.id === entryId ? { ...item, dataUrl } : item
+              )
+            );
+          }
+        };
+        reader.readAsDataURL(f);
+      } catch {
+        // ignore
+      }
+    });
   };
 
   const handleReferenceFileSelect = (
@@ -422,7 +449,16 @@ export const GetQuotePage: React.FC<GetQuotePageProps> = ({
         )
         .join(' + ');
 
-      let qNum = `FPS-QUOTE-${Math.floor(1000 + Math.random() * 9000)}`;
+      const sampleFilesData: UploadedClientFileItem[] = sampleFiles.map((f) => ({
+        name: f.name,
+        sizeLabel: f.sizeLabel,
+        dataUrl: f.dataUrl,
+      }));
+      let qNum = `FX-${new Date().getDate().toString().padStart(2, '0')}${(
+        new Date().getMonth() + 1
+      )
+        .toString()
+        .padStart(2, '0')}${new Date().getFullYear()}`;
       if (onSubmitPublicQuery) {
         const res = await onSubmitPublicQuery({
           clientName: effectiveName,
@@ -431,8 +467,11 @@ export const GetQuotePage: React.FC<GetQuotePageProps> = ({
           companyName: effectiveCompany,
           serviceTitle: `${primaryItem.serviceTitle} ($${effectiveNetTotal.toFixed(2)} Quote)`,
           serviceSlug: primaryItem.serviceSlug,
-          instructions: `Items: ${breakdownSummary} | Total: $${effectiveNetTotal.toFixed(2)} USD. Notes: ${notes.trim()}`,
+          instructions: `Items: ${breakdownSummary} | Total: $${effectiveNetTotal.toFixed(2)} USD.${
+            notes.trim() ? ` Working Instruction: ${notes.trim()}` : ''
+          }`,
           sampleFiles: sampleFiles.map((f) => f.name),
+          sampleFilesData,
         });
         qNum = res.queryNumber;
       }
@@ -440,21 +479,20 @@ export const GetQuotePage: React.FC<GetQuotePageProps> = ({
       const finalTitle =
         projectTitle.trim() || 'Custom Studio Volume Production Quote';
       await onSubmitQuoteOrder({
-        projectTitle: `CUSTOM QUOTE (${qNum}) — ${finalTitle} (${
+        projectTitle: `CUSTOM QUOTE — ${finalTitle} (${
           effectiveCompany || effectiveName
         })`,
         serviceCategory: primaryItem.category,
+        serviceTitle: primaryItem.serviceTitle,
         imageCount: effectiveTotalQty,
         turnaroundHours,
         outputFormat,
         backgroundSpec,
-        instructions: `[QUOTE LOCK · ${effectiveName} <${effectiveEmail}>${
-          effectivePhone ? ` · Tel: ${effectivePhone}` : ''
-        }${effectiveCompany ? ` · Co: ${effectiveCompany}` : ''} · ${effectiveDiscPct}% Vol Discount] Items: ${breakdownSummary}.${
-          notes.trim() ? ` Notes: ${notes.trim()}` : ''
-        }`,
+        instructions:
+          notes.trim() || `Items: ${breakdownSummary} (${effectiveDiscPct}% Vol Discount).`,
         totalPrice: effectiveNetTotal,
         uploadedBatchNames: sampleFiles.map((f) => f.name),
+        uploadedFilesData: sampleFilesData,
         clientName: effectiveName,
         clientEmail: effectiveEmail,
         clientPhone: effectivePhone,

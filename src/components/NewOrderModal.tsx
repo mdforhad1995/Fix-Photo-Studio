@@ -13,6 +13,7 @@ import {
   ServiceCategory,
   OutputFormat,
   BackgroundSpec,
+  UploadedClientFileItem,
 } from '../types';
 import { STUDIO_SERVICES } from '../data/studioCatalog';
 
@@ -30,6 +31,7 @@ interface NewOrderModalProps {
   onSubmitOrder: (payload: {
     projectTitle: string;
     serviceCategory: ServiceCategory;
+    serviceTitle?: string;
     imageCount: number;
     turnaroundHours: number;
     outputFormat: OutputFormat;
@@ -37,6 +39,8 @@ interface NewOrderModalProps {
     instructions: string;
     totalPrice: number;
     uploadedBatchNames: string[];
+    uploadedFilesData?: UploadedClientFileItem[];
+    clientSourceFilesUrl?: string;
     clientName?: string;
     clientEmail?: string;
     clientPhone?: string;
@@ -54,6 +58,7 @@ interface BatchUploadFileItem {
   stage: FileUploadStage;
   speedLabel: string;
   colorProfile: string;
+  dataUrl?: string;
 }
 
 const formatByteSize = (bytes: number): string => {
@@ -90,6 +95,7 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({
   const [outputFormat] = useState<OutputFormat>('PSD_LAYERED');
   const [backgroundSpec] = useState<BackgroundSpec>('PURE_WHITE_FFFFFF');
   const [instructions, setInstructions] = useState('');
+  const [clientSourceFilesUrl, setClientSourceFilesUrl] = useState('');
   const [uploadQueue, setUploadQueue] = useState<BatchUploadFileItem[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [uploadLimitNotice, setUploadLimitNotice] = useState<string | null>(null);
@@ -213,27 +219,27 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({
       );
     }
 
-    const newEntries: BatchUploadFileItem[] = incomingArray
-      .slice(0, remainingSlots)
-      .map((f, idx) => {
-        const ext = f.name.split('.').pop()?.toUpperCase() || 'RAW';
-        return {
-          id: `file_${Date.now()}_${idx}`,
-          name: f.name.slice(0, 150),
-          sizeLabel: formatByteSize(f.size),
-          progress: idx === 0 ? 18 : 0,
-          stage: idx === 0 ? 'uploading' : 'queued',
-          speedLabel: `${(36 + ((idx * 5) % 14)).toFixed(1)} MB/s`,
-          colorProfile:
-            ext === 'MP4' || ext === 'MOV' || ext === 'MXF'
-              ? '4K Rec.709 Stream'
-              : ext === 'CR3' || ext === 'NEF' || ext === 'RAF'
-              ? '16-Bit Camera RAW'
-              : ext === 'PSD' || ext === 'TIFF'
-              ? 'AdobeRGB 1998'
-              : 'sRGB IEC61966-2.1',
-        };
-      });
+    const slicedFiles = incomingArray.slice(0, remainingSlots);
+    const baseTimestamp = Date.now();
+    const newEntries: BatchUploadFileItem[] = slicedFiles.map((f, idx) => {
+      const ext = f.name.split('.').pop()?.toUpperCase() || 'RAW';
+      return {
+        id: `file_${baseTimestamp}_${idx}`,
+        name: f.name.slice(0, 150),
+        sizeLabel: formatByteSize(f.size),
+        progress: idx === 0 ? 18 : 0,
+        stage: idx === 0 ? 'uploading' : 'queued',
+        speedLabel: `${(36 + ((idx * 5) % 14)).toFixed(1)} MB/s`,
+        colorProfile:
+          ext === 'MP4' || ext === 'MOV' || ext === 'MXF'
+            ? '4K Rec.709 Stream'
+            : ext === 'CR3' || ext === 'NEF' || ext === 'RAF'
+            ? '16-Bit Camera RAW'
+            : ext === 'PSD' || ext === 'TIFF'
+            ? 'AdobeRGB 1998'
+            : 'sRGB IEC61966-2.1',
+      };
+    });
 
     setUploadQueue((prev) => {
       const existingNames = new Set(prev.map((item) => item.name));
@@ -243,6 +249,27 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({
         setImageCount((curr) => Math.max(curr, updated.length));
       }
       return updated;
+    });
+
+    // Read each file as Data URL so Admin can directly download the client's uploaded files
+    slicedFiles.forEach((f, idx) => {
+      const entryId = `file_${baseTimestamp}_${idx}`;
+      try {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            const dataUrl = reader.result;
+            setUploadQueue((prev) =>
+              prev.map((item) =>
+                item.id === entryId ? { ...item, dataUrl } : item
+              )
+            );
+          }
+        };
+        reader.readAsDataURL(f);
+      } catch {
+        // ignore read error
+      }
     });
   };
 
@@ -309,6 +336,7 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({
       await onSubmitOrder({
         projectTitle: finalTitle.slice(0, 140),
         serviceCategory: selectedServiceObj.id,
+        serviceTitle: selectedServiceObj.shortNavTitle,
         imageCount: Math.min(Math.max(1, imageCount), 10000),
         turnaroundHours,
         outputFormat,
@@ -318,6 +346,12 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({
           `Standard studio SOP for ${selectedServiceObj.shortNavTitle}.`,
         totalPrice,
         uploadedBatchNames: uploadQueue.map((item) => item.name).slice(0, 10),
+        uploadedFilesData: uploadQueue.slice(0, 10).map((item) => ({
+          name: item.name,
+          sizeLabel: item.sizeLabel,
+          dataUrl: item.dataUrl,
+        })),
+        clientSourceFilesUrl: clientSourceFilesUrl.trim() || undefined,
         clientName: effectiveName || undefined,
         clientEmail: effectiveEmail || undefined,
         clientPhone: effectivePhone || undefined,
@@ -683,13 +717,23 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({
                   })}
                 </div>
               )}
+              <div className="pt-1">
+                <label className="block text-[11px] font-semibold text-[#001E5A] mb-1">
+                  Or Paste Source Files Link (Optional — Google Drive, Dropbox, WeTransfer)
+                </label>
+                <input
+                  type="text"
+                  value={clientSourceFilesUrl}
+                  onChange={(e) => setClientSourceFilesUrl(e.target.value)}
+                  placeholder="https://drive.google.com/drive/folders/... or https://wetransfer.com/..."
+                  className="w-full px-3 py-1.5 text-xs font-mono-tabular bg-white border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
+                />
+              </div>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-[#001E5A] mb-1.5">
-                {division === 'video_editing'
-                  ? 'Video Editing Brief & Style Guide Notes'
-                  : 'Technical Retoucher Brief & Style Guide Notes'}
+                Working Instruction
               </label>
               <textarea
                 rows={2}
@@ -698,8 +742,8 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({
                 onChange={(e) => setInstructions(e.target.value)}
                 placeholder={
                   division === 'video_editing'
-                    ? 'Describe your video editing instructions (e.g., 4K Rec.709 color grade, rig removal, 9:16 social cuts, audio sync)...'
-                    : 'Describe your retouching instructions (e.g., 0.25px feather Bezier path, pure white background, natural shadow)...'
+                    ? 'Write your working instruction (e.g., 4K Rec.709 color grade, rig removal, 9:16 social cuts, audio sync)...'
+                    : 'Write your working instruction (e.g., 0.25px feather Bezier path, pure white background, natural shadow)...'
                 }
                 className="w-full px-3.5 py-2 text-xs border border-[#B8D0EB] rounded-lg focus:outline-none focus:border-[#0088FF]"
               />

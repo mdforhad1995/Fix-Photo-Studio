@@ -10,6 +10,7 @@ import {
   doc,
   setDoc,
   updateDoc,
+  deleteDoc,
   onSnapshot,
   query,
   where,
@@ -62,6 +63,7 @@ import {
   InvoicePaymentStatus,
   InvoicePaymentTerms,
   InvoicePaymentOption,
+  UploadedClientFileItem,
 } from './types';
 import {
   INITIAL_CLIENT_QUERIES,
@@ -169,8 +171,7 @@ const DEFAULT_INVOICE_PAYMENT_INFO: InvoicePaymentInfo = {
   taxRatePercent: 0,
   defaultPaymentTerms: 'Project',
   defaultPaymentOption: 'PayPal',
-  invoiceNotesAndTerms:
-    'Official Commercial Invoice issued by Fix Photo Studio. All deliverables include dual-stage 400% QA verification and lifetime archive warranty.',
+  invoiceNotesAndTerms: '',
   bankName: 'Dutch Bangla Bank PLC',
   accountHolderName: 'Md Forhad Hossen',
   accountNumberOrIban: '211.1510.213110',
@@ -186,6 +187,20 @@ const DEFAULT_INVOICE_PAYMENT_INFO: InvoicePaymentInfo = {
     'Please include your Invoice Reference ID (INV-FPS-2026-XXXX) in the payment memo. Once payment is sent, our billing desk will verify and update your invoice status from PENDING to PAID in the Client Portal.',
   billingSupportEmail: 'asiaclipp@gmail.com',
 };
+
+function formatFxDateCode(dateInput?: unknown): string {
+  let d = new Date();
+  if (dateInput instanceof Date && !isNaN(dateInput.getTime())) {
+    d = dateInput;
+  } else if (typeof dateInput === 'string' || typeof dateInput === 'number') {
+    const parsed = new Date(dateInput);
+    if (!isNaN(parsed.getTime())) d = parsed;
+  }
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = String(d.getFullYear());
+  return `FX-${day}${month}${year}`;
+}
 
 function loadStoredJson<T>(key: string, fallback: T): T {
   try {
@@ -285,9 +300,23 @@ export default function App() {
     loadStoredJson('fps_client_queries_v1', INITIAL_CLIENT_QUERIES)
   );
   const [invoicePaymentInfo, setInvoicePaymentInfo] =
-    useState<InvoicePaymentInfo>(() =>
-      loadStoredJson('fps_invoice_payment_info_v2', DEFAULT_INVOICE_PAYMENT_INFO)
-    );
+    useState<InvoicePaymentInfo>(() => {
+      const loaded = loadStoredJson(
+        'fps_invoice_payment_info_v2',
+        DEFAULT_INVOICE_PAYMENT_INFO
+      );
+      const cleanedNotes = (loaded.invoiceNotesAndTerms || '')
+        .replace(
+          /All deliverables include dual-stage 400% QA verification and lifetime archive warranty\.?/gi,
+          ''
+        )
+        .replace(/Official Commercial Invoice issued by Fix Photo Studio\.?/gi, '')
+        .trim();
+      return {
+        ...loaded,
+        invoiceNotesAndTerms: cleanedNotes,
+      };
+    });
   const [invoiceStatusMap, setInvoiceStatusMap] = useState<
     Record<string, InvoicePaymentStatus>
   >(() =>
@@ -526,6 +555,7 @@ export default function App() {
       id: string;
       name: string;
       sizeLabel: string;
+      dataUrl?: string;
       progress: number;
       done: boolean;
     }>
@@ -565,16 +595,37 @@ export default function App() {
       e.target.value = '';
       return;
     }
-    const added = Array.from(files)
-      .slice(0, remaining)
-      .map((f, idx) => ({
-        id: `htf_${Date.now()}_${idx}`,
-        name: f.name.slice(0, 120),
-        sizeLabel: `${Math.max(0.1, Number((f.size / (1024 * 1024)).toFixed(1)))} MB`,
-        progress: 20,
-        done: false,
-      }));
-    setTrialUploadedFiles((prev) => [...prev, ...added].slice(0, 5));
+    const selectedFiles = Array.from(files).slice(0, remaining);
+    selectedFiles.forEach((f, idx) => {
+      const id = `htf_${Date.now()}_${idx}`;
+      const cleanName = f.name.slice(0, 120);
+      const sizeLabel = `${Math.max(0.1, Number((f.size / (1024 * 1024)).toFixed(1)))} MB`;
+      setTrialUploadedFiles((prev) =>
+        [
+          ...prev,
+          {
+            id,
+            name: cleanName,
+            sizeLabel,
+            progress: 20,
+            done: false,
+          },
+        ].slice(0, 5)
+      );
+      if (f.size <= 8 * 1024 * 1024) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            setTrialUploadedFiles((prev) =>
+              prev.map((item) =>
+                item.id === id ? { ...item, dataUrl: reader.result as string } : item
+              )
+            );
+          }
+        };
+        reader.readAsDataURL(f);
+      }
+    });
     e.target.value = '';
   };
 
@@ -735,6 +786,87 @@ export default function App() {
         (n) => n && n.userId && n.userId !== 'sandbox_studio_client'
       )
   );
+
+  // Migrate any legacy FPS-2026-XXXX order numbers and INV- prefixes to simple FX-DDMMYYYY format
+  useEffect(() => {
+    if (firebaseUser) return;
+    const hasLegacyOrderNumber = orders.some(
+      (o) => !o.orderNumber.startsWith('FX-')
+    );
+    const hasLegacyNotifRef = notifications.some(
+      (n) => n.invoiceRef && n.invoiceRef.startsWith('INV-')
+    );
+    if (!hasLegacyOrderNumber && !hasLegacyNotifRef) return;
+
+    const usedCounts: Record<string, number> = {};
+    const oldToNewMap: Record<string, string> = {};
+
+    const migratedOrders = orders.map((o) => {
+      if (o.orderNumber.startsWith('FX-')) {
+        usedCounts[o.orderNumber] = (usedCounts[o.orderNumber] || 0) + 1;
+        return o;
+      }
+      const baseCode = formatFxDateCode(o.createdAt);
+      const count = (usedCounts[baseCode] || 0) + 1;
+      usedCounts[baseCode] = count;
+      const newOrderNum =
+        count === 1
+          ? baseCode
+          : `${baseCode}-${String(count).padStart(2, '0')}`;
+      oldToNewMap[o.orderNumber] = newOrderNum;
+      oldToNewMap[`INV-${o.orderNumber}`] = newOrderNum;
+      return {
+        ...o,
+        orderNumber: newOrderNum,
+      };
+    });
+
+    if (hasLegacyOrderNumber) {
+      setOrders(migratedOrders);
+      setOrderApprovalMap((prev) => {
+        const next = { ...prev };
+        Object.entries(oldToNewMap).forEach(([oldKey, newKey]) => {
+          if (prev[oldKey]) {
+            next[newKey] = prev[oldKey];
+          }
+        });
+        return next;
+      });
+      setInvoiceStatusMap((prev) => {
+        const next = { ...prev };
+        Object.entries(oldToNewMap).forEach(([oldKey, newKey]) => {
+          if (prev[oldKey]) {
+            next[newKey] = prev[oldKey];
+          }
+        });
+        return next;
+      });
+    }
+
+    setNotifications((prev) =>
+      prev.map((n) => {
+        let nextRef = n.invoiceRef || '';
+        if (oldToNewMap[nextRef]) {
+          nextRef = oldToNewMap[nextRef];
+        } else if (nextRef.startsWith('INV-')) {
+          const stripped = nextRef.replace(/^INV-/i, '');
+          nextRef = oldToNewMap[stripped] || stripped;
+        }
+        let nextTitle = n.title;
+        let nextMessage = n.message;
+        Object.entries(oldToNewMap).forEach(([oldKey, newKey]) => {
+          nextTitle = nextTitle.split(oldKey).join(newKey);
+          nextMessage = nextMessage.split(oldKey).join(newKey);
+        });
+        return {
+          ...n,
+          invoiceRef: nextRef,
+          title: nextTitle,
+          message: nextMessage,
+        };
+      })
+    );
+  }, [orders, notifications, firebaseUser]);
 
   // Persist user-submitted orders, messages, and notifications so each client sees their own history and Admin sees all
   useEffect(() => {
@@ -985,6 +1117,7 @@ export default function App() {
     payload: {
       projectTitle: string;
       serviceCategory: ServiceCategory;
+      serviceTitle?: string;
       imageCount: number;
       turnaroundHours: number;
       outputFormat: OutputFormat;
@@ -992,6 +1125,8 @@ export default function App() {
       instructions: string;
       totalPrice: number;
       uploadedBatchNames: string[];
+      uploadedFilesData?: UploadedClientFileItem[];
+      clientSourceFilesUrl?: string;
       clientName?: string;
       clientEmail?: string;
       clientPhone?: string;
@@ -1002,9 +1137,23 @@ export default function App() {
     options?: { redirectToPortal?: boolean }
   ): Promise<string> => {
     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-    const orderNumber = `FPS-2026-${randomSuffix}`;
-    const invoiceRef = `INV-FPS-2026-${randomSuffix}`;
+    const baseDateCode = formatFxDateCode(new Date());
+    const sameDayExistingCount = orders.filter((o) =>
+      o.orderNumber.startsWith(baseDateCode)
+    ).length;
+    const orderNumber =
+      sameDayExistingCount === 0
+        ? baseDateCode
+        : `${baseDateCode}-${String(sameDayExistingCount + 1).padStart(2, '0')}`;
+    const invoiceRef = orderNumber;
     const orderId = sanitizeId(`ord_${Date.now()}_${randomSuffix}`);
+
+    const resolvedServiceTitle =
+      payload.serviceTitle ||
+      servicesList.find((s) => s.id === payload.serviceCategory)?.shortNavTitle ||
+      STUDIO_SERVICES.find((s) => s.id === payload.serviceCategory)
+        ?.shortNavTitle ||
+      'Clipping Path Service';
 
     const resolvedClientEmail =
       payload.clientEmail?.trim().toLowerCase() ||
@@ -1122,6 +1271,7 @@ export default function App() {
         paymentOption: invoicePaymentInfo.defaultPaymentOption || 'PayPal',
         projectTitle: payload.projectTitle,
         serviceCategory: payload.serviceCategory,
+        serviceTitle: resolvedServiceTitle,
         imageCount: payload.imageCount,
         turnaroundHours: payload.turnaroundHours,
         outputFormat: payload.outputFormat,
@@ -1131,6 +1281,8 @@ export default function App() {
         status: 'queued',
         progressPercent: 0,
         uploadedBatchNames: payload.uploadedBatchNames,
+        uploadedFilesData: payload.uploadedFilesData,
+        clientSourceFilesUrl: payload.clientSourceFilesUrl,
         deliveryReady: false,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -1179,6 +1331,19 @@ export default function App() {
     return orderNumber;
   };
 
+  const getOrderCurrentStageIndex = (order: OrderDoc): number => {
+    const isPending =
+      orderApprovalMap[order.orderNumber] === 'pending' ||
+      (orderApprovalMap[order.orderNumber] !== 'approved' &&
+        order.progressPercent === 0);
+    if (isPending) return -1;
+    if (order.status === 'queued' || order.status === 'ingesting') return 0;
+    if (order.status === 'clipping' || order.status === 'retouching') return 1;
+    if (order.status === 'qa_review') return 2;
+    if (order.status === 'completed') return 3;
+    return 0;
+  };
+
   const handleSetOrderStage = async (
     order: OrderDoc,
     targetStatus: OrderStatus | 'pending_approval',
@@ -1189,38 +1354,29 @@ export default function App() {
         ? deliveryDownloadUrl.trim()
         : order.deliveryDownloadUrl || '';
 
+    const currentStageIdx = getOrderCurrentStageIndex(order);
+
+    // Once approved (stage >= 0), an order can never revert to pending_approval
     if (targetStatus === 'pending_approval') {
-      setOrderApprovalMap((prev) => ({
-        ...prev,
-        [order.orderNumber]: 'pending',
-      }));
-      if (firebaseUser) {
-        try {
-          await updateDoc(doc(db, 'orders', order.id), {
-            status: 'queued',
-            progressPercent: 0,
-            deliveryReady: false,
-            updatedAt: serverTimestamp(),
-          });
-        } catch (err) {
-          handleFirestoreError(err, OperationType.UPDATE, `orders/${order.id}`);
-        }
-      } else {
-        setOrders((prev) =>
-          prev.map((o) =>
-            o.id === order.id
-              ? {
-                  ...o,
-                  status: 'queued',
-                  progressPercent: 0,
-                  deliveryReady: false,
-                  deliveryDownloadUrl: resolvedDownloadUrl,
-                  updatedAt: new Date(),
-                }
-              : o
-          )
-        );
+      if (currentStageIdx >= 0) {
+        return;
       }
+      return;
+    }
+
+    const stageMeta =
+      PIPELINE_STAGES.find((s) => s.status === targetStatus) ||
+      PIPELINE_STAGES[0];
+    const targetStageIdx = PIPELINE_STAGES.findIndex(
+      (s) => s.status === stageMeta.status
+    );
+
+    // Enforce forward-only stage progression: cannot go backwards to an earlier stage.
+    // Allow re-saving stage 3 (completed) if updating the delivery download link.
+    if (
+      targetStageIdx < currentStageIdx ||
+      (targetStageIdx === currentStageIdx && stageMeta.status !== 'completed')
+    ) {
       return;
     }
 
@@ -1229,21 +1385,31 @@ export default function App() {
       [order.orderNumber]: 'approved',
     }));
 
-    const stageMeta =
-      PIPELINE_STAGES.find((s) => s.status === targetStatus) ||
-      PIPELINE_STAGES[0];
     const isNowCompleted = stageMeta.status === 'completed';
+    const isStartWorking = stageMeta.status === 'clipping';
+    const isUpdatingDeliveredLink =
+      isNowCompleted && currentStageIdx === 3 && Boolean(resolvedDownloadUrl);
 
-    const notifTitle = isNowCompleted
-      ? `4. Ready for Delivery — Order ${order.orderNumber} (Download Link Ready)`
+    const notifTitle = isUpdatingDeliveredLink
+      ? `Got New Download Link — Order ${order.orderNumber}`
+      : isNowCompleted
+      ? `4. Ready for Delivery (Got New Download Link) — Order ${order.orderNumber}`
+      : isStartWorking
+      ? `2. Start Working & Invoice Issued — Order ${order.orderNumber}`
       : `Order ${order.orderNumber} · ${stageMeta.label} (${stageMeta.progress}%)`;
 
-    const notifMessage = isNowCompleted
+    const notifMessage = isUpdatingDeliveredLink
+      ? `You got a new download link for Order ${order.orderNumber} (${order.projectTitle})! Download Link: ${resolvedDownloadUrl} (Also sent to your email ${
+          order.clientEmail || 'on file'
+        }).`
+      : isNowCompleted
       ? resolvedDownloadUrl
-        ? `Your completed files for Order ${order.orderNumber} are Ready for Delivery! Download Link: ${resolvedDownloadUrl} (Also sent to your email ${
+        ? `Your completed files for Order ${order.orderNumber} are Ready for Delivery! You got a new download link: ${resolvedDownloadUrl} (Also sent to your email ${
             order.clientEmail || 'on file'
           }).`
         : `${stageMeta.description}`
+      : isStartWorking
+      ? `Production has started on Order ${order.orderNumber} (${order.projectTitle}). Your official invoice (${order.orderNumber}) is now available in your Client Portal.`
       : stageMeta.description;
 
     if (firebaseUser) {
@@ -1259,11 +1425,17 @@ export default function App() {
         const notifId = sanitizeId(`notif_stage_${Date.now()}`);
         await setDoc(doc(db, 'notifications', notifId), {
           userId: uid,
-          type: isNowCompleted ? 'delivery_ready' : 'order_status',
+          type: isNowCompleted
+            ? 'delivery_ready'
+            : isStartWorking
+            ? 'payment_receipt'
+            : 'order_status',
           title: sanitizeString(notifTitle, SCHEMA_LIMITS.NOTIF_TITLE_MAX),
           message: sanitizeString(notifMessage, SCHEMA_LIMITS.NOTIF_MESSAGE_MAX),
-          amountFormatted: '',
-          invoiceRef: '',
+          amountFormatted: isStartWorking
+            ? `$${order.totalPrice.toFixed(2)} USD`
+            : '',
+          invoiceRef: isStartWorking ? order.orderNumber : '',
           read: false,
           createdAt: serverTimestamp(),
         });
@@ -1281,6 +1453,7 @@ export default function App() {
                 deliveryReady: isNowCompleted,
                 deliveryDownloadUrl: resolvedDownloadUrl,
                 deliveryEmailSent: isNowCompleted && Boolean(resolvedDownloadUrl),
+                reopenedByChat: isNowCompleted ? false : o.reopenedByChat,
                 updatedAt: new Date(),
               }
             : o
@@ -1290,11 +1463,17 @@ export default function App() {
         {
           id: `notif_${Date.now()}`,
           userId: order.clientId || activeClientId,
-          type: isNowCompleted ? 'delivery_ready' : 'order_status',
+          type: isNowCompleted
+            ? 'delivery_ready'
+            : isStartWorking
+            ? 'payment_receipt'
+            : 'order_status',
           title: notifTitle,
           message: notifMessage,
-          amountFormatted: '',
-          invoiceRef: '',
+          amountFormatted: isStartWorking
+            ? `$${order.totalPrice.toFixed(2)} USD`
+            : '',
+          invoiceRef: isStartWorking ? order.orderNumber : '',
           read: false,
           createdAt: new Date(),
         },
@@ -1309,9 +1488,13 @@ export default function App() {
           senderId: 'specialist_elena',
           senderName: 'FixPhoto Studio Delivery Desk',
           senderRole: 'specialist',
-          body: `Stage 04: Ready for Delivery! Your completed files for ${order.orderNumber} are ready. Click your download link to download: ${resolvedDownloadUrl} (An email with this download link has also been dispatched to ${
-            order.clientEmail || 'your email'
-          }).`,
+          body: isUpdatingDeliveredLink
+            ? `Got New Download Link! Your updated download link for Order ${order.orderNumber} is ready: ${resolvedDownloadUrl} (An email with this new download link has also been dispatched to ${
+                order.clientEmail || 'your email'
+              }).`
+            : `Stage 04: Ready for Delivery! Your completed files for ${order.orderNumber} are ready. Click your download link to download: ${resolvedDownloadUrl} (An email with this download link has also been dispatched to ${
+                order.clientEmail || 'your email'
+              }).`,
           attachmentName: resolvedDownloadUrl,
           createdAt: new Date(),
         };
@@ -1327,7 +1510,9 @@ export default function App() {
             clientEmail: order.clientEmail,
             clientPhone: order.clientPhone || '',
             companyName: order.companyName || '',
-            serviceTitle: `READY FOR DELIVERY — ${order.orderNumber}`,
+            serviceTitle: isUpdatingDeliveredLink
+              ? `GOT NEW DOWNLOAD LINK — ${order.orderNumber}`
+              : `READY FOR DELIVERY — ${order.orderNumber}`,
             serviceSlug: 'delivery-ready',
             instructions: `Download Link Sent to Customer: ${resolvedDownloadUrl}`,
             sampleFiles: [resolvedDownloadUrl],
@@ -1342,25 +1527,88 @@ export default function App() {
   };
 
   const handleApproveOrder = async (order: OrderDoc) => {
-    const nextStage: OrderStatus =
-      order.status === 'queued' && order.progressPercent === 0
-        ? 'ingesting'
-        : order.status;
-    await handleSetOrderStage(order, nextStage);
+    const currentStageIdx = getOrderCurrentStageIndex(order);
+    if (currentStageIdx >= 0) return;
+    await handleSetOrderStage(order, 'ingesting');
   };
 
   const handleAdvanceOrderStage = async (order: OrderDoc) => {
-    const isPending =
-      orderApprovalMap[order.orderNumber] === 'pending' ||
-      (order.status === 'queued' && order.progressPercent === 0);
-    if (isPending) {
+    const currentIdx = getOrderCurrentStageIndex(order);
+    if (currentIdx < 0) {
       await handleSetOrderStage(order, 'ingesting');
       return;
     }
-    const currentIdx = PIPELINE_STAGES.findIndex((s) => s.status === order.status);
-    if (currentIdx < 0 || currentIdx >= PIPELINE_STAGES.length - 1) return;
+    if (currentIdx >= PIPELINE_STAGES.length - 1) return;
     const nextStage = PIPELINE_STAGES[currentIdx + 1];
     await handleSetOrderStage(order, nextStage.status);
+  };
+
+  const handleCompleteOrderByClient = async (order: OrderDoc) => {
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === order.id
+          ? {
+              ...o,
+              status: 'completed',
+              progressPercent: 100,
+              deliveryReady: true,
+              clientCompleted: true,
+              clientCompletedAt: new Date(),
+              reopenedByChat: false,
+              updatedAt: new Date(),
+            }
+          : o
+      )
+    );
+
+    const notifTitle = `5. Complete Order — ${order.orderNumber}`;
+    const notifMessage = `Order ${order.orderNumber} (${order.projectTitle}) has been marked Complete and moved to your Complete Order archive.`;
+    setNotifications((prev) => [
+      {
+        id: `notif_complete_${Date.now()}`,
+        userId: order.clientId || activeClientId,
+        type: 'order_status',
+        title: notifTitle,
+        message: notifMessage,
+        amountFormatted: '',
+        invoiceRef: '',
+        read: false,
+        createdAt: new Date(),
+      },
+      ...prev,
+    ]);
+  };
+
+  const handleDeleteOrder = async (order: OrderDoc) => {
+    if (firebaseUser) {
+      try {
+        await deleteDoc(doc(db, 'orders', order.id));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, `orders/${order.id}`);
+      }
+    } else {
+      setOrders((prev) => prev.filter((o) => o.id !== order.id));
+    }
+
+    setOrderApprovalMap((prev) => {
+      const next = { ...prev };
+      delete next[order.orderNumber];
+      return next;
+    });
+    setInvoiceStatusMap((prev) => {
+      const next = { ...prev };
+      delete next[order.orderNumber];
+      delete next[`INV-${order.orderNumber}`];
+      return next;
+    });
+    setNotifications((prev) =>
+      prev.filter(
+        (n) =>
+          n.invoiceRef !== order.orderNumber &&
+          n.invoiceRef !== `INV-${order.orderNumber}` &&
+          !n.title.includes(order.orderNumber)
+      )
+    );
   };
 
   const handleUpdateInvoiceStatus = async (
@@ -1368,9 +1616,20 @@ export default function App() {
     nextStatus: InvoicePaymentStatus,
     relatedOrderNumber?: string
   ) => {
+    const currentInvoiceStatus =
+      invoiceStatusMap[invoiceRef] ||
+      (relatedOrderNumber ? invoiceStatusMap[relatedOrderNumber] : undefined) ||
+      'pending';
+
+    // Once marked PAID, an invoice can never revert to pending
+    if (currentInvoiceStatus === 'paid' && nextStatus === 'pending') {
+      return;
+    }
+
     setInvoiceStatusMap((prev) => ({
       ...prev,
       [invoiceRef]: nextStatus,
+      ...(relatedOrderNumber ? { [relatedOrderNumber]: nextStatus } : {}),
     }));
 
     const matchingNotif = notifications.find((n) => n.invoiceRef === invoiceRef);
@@ -1484,10 +1743,12 @@ export default function App() {
     const nextFormat =
       updates.outputFormat !== undefined ? updates.outputFormat : targetOrder.outputFormat;
 
-    const invoiceRef = `INV-${targetOrder.orderNumber}`;
+    const invoiceRef = targetOrder.orderNumber;
     const matchingNotif = notifications.find(
       (n) =>
-        n.invoiceRef === invoiceRef || n.title.includes(targetOrder.orderNumber)
+        n.invoiceRef === invoiceRef ||
+        n.invoiceRef === `INV-${targetOrder.orderNumber}` ||
+        n.title.includes(targetOrder.orderNumber)
     );
 
     if (firebaseUser) {
@@ -1665,7 +1926,8 @@ export default function App() {
   const handleSendMessage = async (
     order: OrderDoc,
     body: string,
-    attachmentName: string
+    attachmentName: string,
+    senderRoleOverride?: 'client' | 'specialist'
   ) => {
     const cleanBody = sanitizeString(
       body,
@@ -1676,35 +1938,26 @@ export default function App() {
       attachmentName,
       SCHEMA_LIMITS.ATTACHMENT_NAME_MAX
     );
+    const role: 'client' | 'specialist' = senderRoleOverride || 'client';
 
     if (firebaseUser) {
       const uid = firebaseUser.uid;
-      const clientMsgId = sanitizeId(`msg_${Date.now()}_c`);
+      const msgId = sanitizeId(`msg_${Date.now()}_${role === 'specialist' ? 's' : 'c'}`);
       try {
-        await setDoc(doc(db, 'orders', order.id, 'messages', clientMsgId), {
+        await setDoc(doc(db, 'orders', order.id, 'messages', msgId), {
           orderId: order.id,
-          clientId: uid,
+          clientId: order.clientId || uid,
           senderId: uid,
           senderName: sanitizeString(
-            userProfile.displayName,
+            role === 'specialist'
+              ? 'FixPhoto Studio Admin'
+              : userProfile.displayName || order.clientName || 'Client',
             SCHEMA_LIMITS.DISPLAY_NAME_MAX,
-            'Client'
+            role === 'specialist' ? 'FixPhoto Studio Admin' : 'Client'
           ),
-          senderRole: 'client',
+          senderRole: role,
           body: cleanBody,
           attachmentName: cleanAttachment,
-          createdAt: serverTimestamp(),
-        });
-
-        const replyMsgId = sanitizeId(`msg_${Date.now() + 1}_s`);
-        await setDoc(doc(db, 'orders', order.id, 'messages', replyMsgId), {
-          orderId: order.id,
-          clientId: uid,
-          senderId: uid,
-          senderName: 'Elena Rostova (Lead Specialist)',
-          senderRole: 'specialist',
-          body: `Received your note on ${order.orderNumber}. We have logged this instruction onto the active QA checklist (${order.progressPercent}% complete).`,
-          attachmentName: '',
           createdAt: serverTimestamp(),
         });
       } catch (err) {
@@ -1712,32 +1965,58 @@ export default function App() {
       }
     } else {
       const ownerId = order.clientId || activeClientId || 'guest_client';
-      const clientMsg: OrderMessageDoc = {
-        id: `msg_${Date.now()}_c`,
+      const newMsg: OrderMessageDoc = {
+        id: `msg_${Date.now()}_${role === 'specialist' ? 's' : 'c'}`,
         orderId: order.id,
         clientId: ownerId,
-        senderId: ownerId,
-        senderName: activeClientDisplayName,
-        senderRole: 'client',
+        senderId: role === 'specialist' ? 'studio_admin' : ownerId,
+        senderName:
+          role === 'specialist'
+            ? 'FixPhoto Studio Admin'
+            : order.clientName || activeClientDisplayName || 'Client',
+        senderRole: role,
         body: cleanBody,
         attachmentName: cleanAttachment,
         createdAt: new Date(),
       };
-      const specialistReply: OrderMessageDoc = {
-        id: `msg_${Date.now() + 1}_s`,
-        orderId: order.id,
-        clientId: ownerId,
-        senderId: 'specialist_elena',
-        senderName: 'Elena Rostova',
-        senderRole: 'specialist',
-        body: `Received your note on ${order.orderNumber}. Our retouching pod has applied your specification to the batch style sheet.`,
-        attachmentName: '',
-        createdAt: new Date(),
-      };
       setSandboxMessagesMap((prev) => ({
         ...prev,
-        [order.id]: [...(prev[order.id] || []), clientMsg, specialistReply],
+        [order.id]: [...(prev[order.id] || []), newMsg],
       }));
+    }
+
+    // If a new reply is sent on an already completed/delivered order, move it back to the active/pending list
+    // until Admin or Client finishes/confirms it again!
+    if (order.status === 'completed' || order.clientCompleted) {
+      setOrders((prev) =>
+        prev.map((o) =>
+          o.id === order.id
+            ? {
+                ...o,
+                reopenedByChat: true,
+                clientCompleted: false,
+                updatedAt: new Date(),
+              }
+            : o
+        )
+      );
+    }
+
+    if (role === 'specialist') {
+      setNotifications((prev) => [
+        {
+          id: `notif_msg_${Date.now()}`,
+          userId: order.clientId || activeClientId,
+          type: 'order_status',
+          title: `New Reply from Studio Admin — Order ${order.orderNumber}`,
+          message: cleanBody,
+          amountFormatted: '',
+          invoiceRef: '',
+          read: false,
+          createdAt: new Date(),
+        },
+        ...prev,
+      ]);
     }
   };
 
@@ -1881,6 +2160,8 @@ export default function App() {
     serviceSlug: string;
     instructions: string;
     sampleFiles?: string[];
+    sampleFilesData?: UploadedClientFileItem[];
+    clientSourceFilesUrl?: string;
     portalOrderNumber?: string;
   }): Promise<ClientQueryItem> => {
     const newQuery = await createAndDispatchClientQuery({
@@ -1903,6 +2184,11 @@ export default function App() {
     const chosenService =
       servicesList.find((s) => s.slug === trialServiceSlug) || servicesList[0];
     const customerFileNames = trialUploadedFiles.map((f) => f.name);
+    const customerFilesData = trialUploadedFiles.map((f) => ({
+      name: f.name,
+      sizeLabel: f.sizeLabel,
+      dataUrl: f.dataUrl,
+    }));
 
     const createdOrderNum = await handleCreateOrder(
       {
@@ -1910,6 +2196,7 @@ export default function App() {
           trialDivision === 'video_editing' ? 'VIDEO' : '5-IMAGE'
         } TRIAL — ${chosenService.shortNavTitle} (${trialName.trim()})`,
         serviceCategory: chosenService.id,
+        serviceTitle: chosenService.shortNavTitle,
         imageCount:
           customerFileNames.length > 0
             ? customerFileNames.length
@@ -1926,6 +2213,7 @@ export default function App() {
           }. Execute 400% zoom QA.`,
         totalPrice: 0,
         uploadedBatchNames: customerFileNames,
+        uploadedFilesData: customerFilesData,
         clientName: trialName.trim(),
         clientEmail: trialEmail.trim(),
       },
@@ -1943,6 +2231,7 @@ export default function App() {
         trialInstructions.trim() ||
         `Complimentary Studio Quality Trial Inquiry for ${chosenService.shortNavTitle}.`,
       sampleFiles: customerFileNames,
+      sampleFilesData: customerFilesData,
       portalOrderNumber: createdOrderNum,
     });
 
@@ -2441,7 +2730,12 @@ export default function App() {
         onApproveOrder={handleApproveOrder}
         onSetOrderStage={handleSetOrderStage}
         onAdvanceOrderStage={handleAdvanceOrderStage}
+        onDeleteOrder={handleDeleteOrder}
         onUpdateOrderInvoiceDetails={handleUpdateOrderInvoiceDetails}
+        messagesByOrderId={sandboxMessagesMap}
+        onSendOrderMessage={(ord, body, attachment) =>
+          handleSendMessage(ord, body, attachment, 'specialist')
+        }
         invoicePaymentInfo={invoicePaymentInfo}
         onUpdateInvoicePaymentInfo={setInvoicePaymentInfo}
         invoiceStatusMap={invoiceStatusMap}
@@ -2820,6 +3114,7 @@ export default function App() {
             onOpenNewOrder={() => setNewOrderModalOpen(true)}
             onOpenMfaModal={() => setMfaModalOpen(true)}
             onAdvanceOrderStage={handleAdvanceOrderStage}
+            onCompleteOrderByClient={handleCompleteOrderByClient}
             onSendMessage={handleSendMessage}
             onMarkNotificationRead={handleMarkNotificationRead}
             onChangeSubscriptionPlan={handleChangeSubscriptionPlan}

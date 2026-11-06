@@ -33,12 +33,15 @@ import {
   BookOpen,
   Pencil,
   X,
+  Send,
+  User,
 } from 'lucide-react';
 import {
   PortfolioItem,
   ServiceCategory,
   OrderDoc,
   OrderStatus,
+  OrderMessageDoc,
   NotificationAlertDoc,
   InvoicePaymentInfo,
   InvoicePaymentStatus,
@@ -187,6 +190,7 @@ interface AdminCmsPanelProps {
     deliveryDownloadUrl?: string
   ) => Promise<void>;
   onAdvanceOrderStage: (order: OrderDoc) => Promise<void>;
+  onDeleteOrder?: (order: OrderDoc) => Promise<void>;
   onUpdateOrderInvoiceDetails?: (
     orderId: string,
     updates: {
@@ -204,6 +208,12 @@ interface AdminCmsPanelProps {
       totalPrice?: number;
       turnaroundHours?: number;
     }
+  ) => Promise<void>;
+  messagesByOrderId?: Record<string, OrderMessageDoc[]>;
+  onSendOrderMessage?: (
+    order: OrderDoc,
+    body: string,
+    attachmentName: string
   ) => Promise<void>;
   invoicePaymentInfo: InvoicePaymentInfo;
   onUpdateInvoicePaymentInfo: (next: InvoicePaymentInfo) => void;
@@ -253,6 +263,7 @@ const DEFAULT_SECONDARY_MAIN_ADMIN_ACCOUNT: AdminAccountRecord = {
 type AdminTab =
   | 'dashboard_overview'
   | 'plans_and_orders'
+  | 'complete_orders'
   | 'invoices_billing'
   | 'client_queries'
   | 'menu_and_services'
@@ -290,7 +301,10 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
   onApproveOrder,
   onSetOrderStage,
   onAdvanceOrderStage,
+  onDeleteOrder,
   onUpdateOrderInvoiceDetails,
+  messagesByOrderId = {},
+  onSendOrderMessage,
   invoicePaymentInfo,
   onUpdateInvoicePaymentInfo,
   invoiceStatusMap,
@@ -557,6 +571,19 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
   } | null>(null);
   const [isEditingInvoiceSettings, setIsEditingInvoiceSettings] =
     useState(false);
+  const [selectedAdminOrderId, setSelectedAdminOrderId] = useState<string | null>(
+    null
+  );
+  const [adminChatInputs, setAdminChatInputs] = useState<Record<string, string>>(
+    {}
+  );
+  const [editingCompletedLinkOrderId, setEditingCompletedLinkOrderId] = useState<
+    string | null
+  >(null);
+  const [completedLinkDraft, setCompletedLinkDraft] = useState<string>('');
+  const [selectedInvoiceClientKey, setSelectedInvoiceClientKey] = useState<
+    string | null
+  >(null);
   const [invoiceSettingsDraft, setInvoiceSettingsDraft] =
     useState<InvoicePaymentInfo>(invoicePaymentInfo);
 
@@ -1726,7 +1753,14 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
   };
 
   // Computed Agency Metrics
-  const pendingApprovalOrdersCount = orders.filter(
+  const activePipelineOrders = orders.filter(
+    (ord) => ord.status !== 'completed' || Boolean(ord.reopenedByChat)
+  );
+  const completedPipelineOrders = orders.filter(
+    (ord) => ord.status === 'completed' && !ord.reopenedByChat
+  );
+
+  const pendingApprovalOrdersCount = activePipelineOrders.filter(
     (ord) =>
       orderApprovalMap[ord.orderNumber] === 'pending' ||
       (orderApprovalMap[ord.orderNumber] !== 'approved' &&
@@ -1737,20 +1771,150 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
     (q) => q.status === 'new'
   ).length;
 
+  const getOrderInvoiceStatus = (ord: OrderDoc): InvoicePaymentStatus => {
+    const invRef = `INV-${ord.orderNumber}`;
+    return (
+      invoiceStatusMap[ord.orderNumber] ||
+      invoiceStatusMap[invRef] ||
+      'pending'
+    );
+  };
+
   const invoiceNotifications = notifications.filter((n) =>
     Boolean(n.invoiceRef)
   );
-  const pendingInvoicesCount = invoiceNotifications.filter((n) => {
-    const st =
-      invoiceStatusMap[n.invoiceRef] ||
-      (n.title.toUpperCase().includes('[PAID]') ? 'paid' : 'pending');
-    return st === 'pending';
-  }).length;
+  const pendingInvoicesCount = orders.filter(
+    (ord) => getOrderInvoiceStatus(ord) === 'pending'
+  ).length;
 
   const totalOrderRevenue = orders.reduce(
     (sum, ord) => sum + (ord.totalPrice || 0),
     0
   );
+
+  const resolveOrderServiceName = (ord: OrderDoc): string => {
+    if (ord.serviceTitle && ord.serviceTitle.trim()) {
+      return ord.serviceTitle.trim();
+    }
+    const matched = servicesList.find((s) => s.id === ord.serviceCategory);
+    if (matched) return matched.shortNavTitle;
+    return ord.serviceCategory.replace(/_/g, ' ');
+  };
+
+  const renderOrderClientFilesDownload = (ord: OrderDoc) => {
+    const matchedQuery = clientQueries.find(
+      (q) => q.portalOrderNumber === ord.orderNumber
+    );
+    const filesData =
+      ord.uploadedFilesData && ord.uploadedFilesData.length > 0
+        ? ord.uploadedFilesData
+        : matchedQuery?.sampleFilesData && matchedQuery.sampleFilesData.length > 0
+        ? matchedQuery.sampleFilesData
+        : [];
+    const sourceUrl =
+      ord.clientSourceFilesUrl?.trim() ||
+      matchedQuery?.clientSourceFilesUrl?.trim() ||
+      '';
+    const fileNames =
+      ord.uploadedBatchNames && ord.uploadedBatchNames.length > 0
+        ? ord.uploadedBatchNames
+        : matchedQuery?.sampleFiles && matchedQuery.sampleFiles.length > 0
+        ? matchedQuery.sampleFiles
+        : [];
+
+    if (filesData.length === 0 && !sourceUrl && fileNames.length === 0) {
+      return (
+        <span className="text-slate-400 italic text-[11px]">
+          No file attached
+        </span>
+      );
+    }
+
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        {sourceUrl && (
+          <a
+            href={
+              sourceUrl.startsWith('http') ? sourceUrl : `https://${sourceUrl}`
+            }
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-50 hover:bg-[#0088FF] text-[#0088FF] hover:text-white border border-blue-200 text-[11px] font-bold transition-colors"
+          >
+            <Download className="w-3 h-3 shrink-0" />
+            <span>Download Client Source Link ↗</span>
+          </a>
+        )}
+        {filesData.length > 0
+          ? filesData.map((fileItem, idx) =>
+              fileItem.dataUrl ? (
+                <a
+                  key={`${fileItem.name}_${idx}`}
+                  href={fileItem.dataUrl}
+                  download={fileItem.name}
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 hover:bg-emerald-600 text-emerald-800 hover:text-white border border-emerald-300 text-[11px] font-bold transition-colors"
+                >
+                  <Download className="w-3 h-3 shrink-0" />
+                  <span className="max-w-[180px] truncate">
+                    Download {fileItem.name}
+                  </span>
+                </a>
+              ) : (
+                <a
+                  key={`${fileItem.name}_${idx}`}
+                  href={`data:text/plain;charset=utf-8,${encodeURIComponent(
+                    `FixPhoto Studio Client Uploaded File Reference\nOrder: ${ord.orderNumber}\nClient: ${ord.clientName}\nFile Name: ${fileItem.name}\nWorking Instruction: ${ord.instructions || 'N/A'}`
+                  )}`}
+                  download={fileItem.name}
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-50 hover:bg-[#0088FF] text-[#001E5A] hover:text-white border border-blue-200 text-[11px] font-semibold transition-colors"
+                >
+                  <Download className="w-3 h-3 shrink-0" />
+                  <span className="max-w-[180px] truncate">
+                    {fileItem.name}
+                  </span>
+                </a>
+              )
+            )
+          : fileNames.map((fname, idx) => {
+              const isHttp =
+                fname.startsWith('http://') || fname.startsWith('https://');
+              return isHttp ? (
+                <a
+                  key={`${fname}_${idx}`}
+                  href={fname}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 hover:bg-emerald-600 text-emerald-800 hover:text-white border border-emerald-300 text-[11px] font-bold transition-colors"
+                >
+                  <Download className="w-3 h-3 shrink-0" />
+                  <span className="max-w-[180px] truncate">
+                    Download Link ↗
+                  </span>
+                </a>
+              ) : (
+                <a
+                  key={`${fname}_${idx}`}
+                  href={`data:text/plain;charset=utf-8,${encodeURIComponent(
+                    `FixPhoto Studio Client Uploaded File Reference\nOrder: ${ord.orderNumber}\nClient: ${ord.clientName}\nFile Name: ${fname}\nWorking Instruction: ${ord.instructions || 'N/A'}`
+                  )}`}
+                  download={fname}
+                  onClick={(e) => e.stopPropagation()}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-50 hover:bg-[#0088FF] text-[#001E5A] hover:text-white border border-blue-200 text-[11px] font-semibold transition-colors"
+                >
+                  <Download className="w-3 h-3 shrink-0" />
+                  <span className="max-w-[180px] truncate">
+                    Download {fname}
+                  </span>
+                </a>
+              );
+            })}
+      </div>
+    );
+  };
 
   // =========================================================================
   // PAGE 1: DEDICATED STANDALONE ADMIN LOGIN PAGE (#admin-login)
@@ -1924,8 +2088,15 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
           badge:
             pendingApprovalOrdersCount > 0
               ? `${pendingApprovalOrdersCount} Pending`
-              : orders.length,
-          badgeTone: pendingApprovalOrdersCount > 0 ? 'amber' : 'slate',
+              : activePipelineOrders.length,
+          badgeTone: pendingApprovalOrdersCount > 0 ? 'amber' : 'blue',
+        },
+        {
+          id: 'complete_orders',
+          label: 'Complete Order',
+          icon: <CheckCircle2 className="w-4 h-4" />,
+          badge: completedPipelineOrders.length,
+          badgeTone: 'emerald',
         },
         {
           id: 'invoices_billing',
@@ -1943,7 +2114,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
           icon: <MessageSquare className="w-4 h-4" />,
           badge:
             newQueriesCount > 0 ? `${newQueriesCount} New` : clientQueries.length,
-          badgeTone: newQueriesCount > 0 ? 'blue' : 'slate',
+          badgeTone: newQueriesCount > 0 ? 'amber' : 'slate',
         },
       ],
     },
@@ -2027,19 +2198,24 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
         'Real-time summary of studio orders, pending approvals, client inquiries, invoices, and website content.',
     },
     plans_and_orders: {
-      title: 'Customer Orders & 6-Stage Production Pipeline',
+      title: 'Customer Orders & 5-Stage Production Pipeline',
       subtitle:
-        'Approve pending orders and update real-time production stages synced directly to the Client Portal.',
+        'Click any order from the list to inspect its details, chat with the client, and advance its production stages.',
+    },
+    complete_orders: {
+      title: 'Complete Order & Delivered Archive List',
+      subtitle:
+        'All orders in Ready for Delivery or Completed status. Click Edit to send a new download link or click Open to view order chat.',
     },
     invoices_billing: {
-      title: 'Customer Invoices & Payment Gateway Configuration',
+      title: 'Customer Invoices & Client Billing Directory',
       subtitle:
-        'Toggle invoice status between PENDING and PAID, and customize company name, address, and payment details on all PDF invoices.',
+        'Inspect invoices grouped by Client with separate Unpaid/Due and Paid lists, and configure BILL FROM & payment details.',
     },
     client_queries: {
       title: 'Client Queries, Free Trial Leads & Custom Quotes',
       subtitle:
-        'Review inquiries from visitors and logged-in clients, update status, and inspect automated email logs.',
+        'Review inquiries from visitors and logged-in clients, download uploaded trial/quote files, and inspect email logs.',
     },
     menu_and_services: {
       title: 'Service Pages, Split Image+Text Sections, Pricing & SEO CMS',
@@ -2130,6 +2306,25 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                         key={item.id}
                         type="button"
                         onClick={() => {
+                          if (
+                            activeTab === 'client_queries' &&
+                            item.id !== 'client_queries' &&
+                            newQueriesCount > 0
+                          ) {
+                            onUpdateClientQueries(
+                              clientQueries.map((q) =>
+                                q.status === 'new'
+                                  ? { ...q, status: 'contacted' }
+                                  : q
+                              )
+                            );
+                          }
+                          if (
+                            item.id === 'plans_and_orders' ||
+                            item.id === 'complete_orders'
+                          ) {
+                            setSelectedAdminOrderId(null);
+                          }
                           setActiveTab(item.id);
                           window.scrollTo({ top: 0, behavior: 'smooth' });
                         }}
@@ -2255,20 +2450,20 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
 
             <button
               type="button"
-              onClick={() => setActiveTab('admin_accounts')}
+              onClick={() => {
+                if (activeTab === 'client_queries' && newQueriesCount > 0) {
+                  onUpdateClientQueries(
+                    clientQueries.map((q) =>
+                      q.status === 'new' ? { ...q, status: 'contacted' } : q
+                    )
+                  );
+                }
+                setActiveTab('admin_accounts');
+              }}
               className="px-3 py-1.5 text-xs font-bold text-[#001E5A] bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors flex items-center gap-1.5"
             >
               <ShieldCheck className="w-3.5 h-3.5 text-[#0088FF]" />
               <span className="hidden sm:inline">Manage Admins</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('database_backup')}
-              className="px-3 py-1.5 text-xs font-bold text-emerald-950 bg-emerald-400 hover:bg-emerald-300 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Download Database</span>
             </button>
 
             {isMainSuperAdmin && (
@@ -2653,832 +2848,1621 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
           )}
 
           {/* ===================================================================
-              MODULE 1: ORDERS APPROVAL & 6-STAGE WORK PROCESS MANAGER
+              MODULE 1 & 1B: ACTIVE ORDERS PIPELINE & COMPLETE ORDER ARCHIVE
              =================================================================== */}
-          {activeTab === 'plans_and_orders' && (
-            <div className="space-y-8">
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
-                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
-                  <div>
-                    <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
-                      CUSTOMER ORDER APPROVAL & LIVE WORK PROCESS CONTROL
-                    </p>
-                    <h2 className="text-lg font-bold text-[#001E5A]">
-                      Approve Pending Orders & Update Customer 6-Stage Work Process ({orders.length})
-                    </h2>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('invoices_billing')}
-                    className="px-3.5 py-2 rounded-lg bg-[#EAF3FC] hover:bg-[#001E5A] text-[#001E5A] hover:text-white text-xs font-bold transition-colors"
-                  >
-                    Open Invoice & Payment Setup →
-                  </button>
-                </div>
+          {(activeTab === 'plans_and_orders' ||
+            activeTab === 'complete_orders') &&
+            (() => {
+              const isCompleteOrdersTab = activeTab === 'complete_orders';
+              const tabOrders = isCompleteOrdersTab
+                ? completedPipelineOrders
+                : activePipelineOrders;
+              const selectedOrd = selectedAdminOrderId
+                ? orders.find((o) => o.id === selectedAdminOrderId) || null
+                : null;
 
-                {orders.length === 0 ? (
-                  <p className="text-xs text-slate-500 py-6 text-center">
-                    No customer orders yet.
-                  </p>
-                ) : (
-                  <div className="space-y-4">
-                    {orders.map((ord) => {
-                      const isPendingApproval =
-                        orderApprovalMap[ord.orderNumber] === 'pending' ||
-                        (orderApprovalMap[ord.orderNumber] !== 'approved' &&
-                          ord.progressPercent === 0);
-                      const invRef = `INV-${ord.orderNumber}`;
-                      const ordInvoiceStatus: InvoicePaymentStatus =
-                        invoiceStatusMap[invRef] ||
-                        invoiceStatusMap[ord.orderNumber] ||
-                        'pending';
-                      const activeStageObj = PIPELINE_STAGES.find(
-                        (s) => s.status === ord.status
-                      );
+              const renderSingleOrderWorkspace = (ord: OrderDoc) => {
+                const isPendingApproval =
+                  orderApprovalMap[ord.orderNumber] === 'pending' ||
+                  (orderApprovalMap[ord.orderNumber] !== 'approved' &&
+                    ord.progressPercent === 0);
+                const ordInvoiceStatus = getOrderInvoiceStatus(ord);
+                const activeStageObj = PIPELINE_STAGES.find(
+                  (s) => s.status === ord.status
+                );
+                const ordMessages = messagesByOrderId[ord.id] || [];
+                const chatDraft = adminChatInputs[ord.id] || '';
 
-                      return (
-                        <div
-                          key={ord.id}
-                          className="p-5 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-4"
-                        >
-                          {/* Top Row: Order Summary + Approval Action + Invoice Status Action */}
-                          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-3.5">
-                            <div className="space-y-1">
-                              <div className="flex flex-wrap items-center gap-2 text-xs font-mono-tabular">
-                                <span className="font-bold text-[#001E5A] text-sm">
-                                  {ord.orderNumber}
-                                </span>
-                                <span>·</span>
-                                <span className="font-semibold text-slate-700">
-                                  Client: {ord.clientName || 'Studio Client'}
-                                </span>
-                                <span>·</span>
-                                {isPendingApproval ? (
-                                  <span className="text-amber-700 font-bold">
-                                    ORDER STATUS: PENDING APPROVAL
-                                  </span>
-                                ) : (
-                                  <span className="text-emerald-700 font-bold">
-                                    APPROVED ·{' '}
-                                    {activeStageObj?.label.toUpperCase() ||
-                                      ord.status.toUpperCase()}{' '}
-                                    ({ord.progressPercent}%)
-                                  </span>
-                                )}
-                                <span>·</span>
-                                <span
-                                  className={
-                                    ordInvoiceStatus === 'paid'
-                                      ? 'text-emerald-700 font-bold'
-                                      : 'text-amber-700 font-bold'
-                                  }
-                                >
-                                  INVOICE ({invRef}):{' '}
-                                  {ordInvoiceStatus.toUpperCase()}
-                                </span>
-                              </div>
-
-                              <p className="font-bold text-[#001E5A] text-sm">
-                                {ord.projectTitle}
-                              </p>
-                              <p className="text-xs text-slate-600 font-mono-tabular">
-                                {ord.imageCount} frames · {ord.outputFormat} ·{' '}
-                                {ord.backgroundSpec} · {ord.turnaroundHours}h SLA ·{' '}
-                                <strong className="text-[#001E5A]">
-                                  ${ord.totalPrice.toFixed(2)} USD
-                                </strong>
-                              </p>
-                              {ord.instructions && (
-                                <p className="text-xs text-slate-600 pt-1">
-                                  <strong className="text-[#001E5A]">
-                                    Brief:
-                                  </strong>{' '}
-                                  {ord.instructions}
-                                </p>
-                              )}
-                            </div>
-
-                            {/* Right Actions: Approve Order & Toggle Invoice Paid/Pending */}
-                            <div className="flex flex-wrap items-center gap-2">
-                              {isPendingApproval ? (
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    await onApproveOrder(ord);
-                                    notifySaved(
-                                      `Order ${ord.orderNumber} APPROVED and moved into active production!`
-                                    );
-                                  }}
-                                  className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
-                                >
-                                  <CheckCircle2 className="w-4 h-4" />
-                                  <span>Approve Order ✓</span>
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    await onSetOrderStage(
-                                      ord,
-                                      'pending_approval'
-                                    );
-                                    notifySaved(
-                                      `Order ${ord.orderNumber} set back to Pending Approval.`
-                                    );
-                                  }}
-                                  className="px-3 py-1.5 text-xs font-semibold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-lg transition-colors"
-                                >
-                                  Set Order Pending
-                                </button>
-                              )}
-
-                              {ordInvoiceStatus === 'pending' ? (
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    await onUpdateInvoiceStatus(
-                                      invRef,
-                                      'paid',
-                                      ord.orderNumber
-                                    );
-                                    notifySaved(
-                                      `Invoice ${invRef} marked as PAID ✓ in Client Portal!`
-                                    );
-                                  }}
-                                  className="px-3.5 py-2 text-xs font-bold text-white bg-[#0088FF] hover:bg-[#001E5A] rounded-lg transition-colors flex items-center gap-1.5"
-                                >
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                  <span>Mark Invoice PAID ✓</span>
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    await onUpdateInvoiceStatus(
-                                      invRef,
-                                      'pending',
-                                      ord.orderNumber
-                                    );
-                                    notifySaved(
-                                      `Invoice ${invRef} set to PENDING in Client Portal.`
-                                    );
-                                  }}
-                                  className="px-3.5 py-2 text-xs font-semibold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-lg transition-colors"
-                                >
-                                  Set Invoice PENDING
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Bottom Row: 4-Stage Customer Work Process Tracker & Ready for Delivery Link */}
-                          <div className="space-y-3">
-                            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                              <span className="font-bold text-[#001E5A]">
-                                Real-Time Production Stage Progression (Select any of the 4 stages to update Client Portal):
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono-tabular text-[#0088FF] font-semibold">
-                                  Current Status:{' '}
-                                  {isPendingApproval
-                                    ? '1. Order Status: Pending (0%)'
-                                    : `${activeStageObj?.stepIndex || ''} ${
-                                        activeStageObj?.label || ord.status
-                                      } (${ord.progressPercent}%)`}
-                                </span>
-                                <button
-                                  type="button"
-                                  disabled={
-                                    !isPendingApproval &&
-                                    ord.status === 'completed'
-                                  }
-                                  onClick={async () => {
-                                    if (isPendingApproval) {
-                                      await onApproveOrder(ord);
-                                      notifySaved(
-                                        `Order ${ord.orderNumber} marked as Received (Stage 01 · 25%).`
-                                      );
-                                    } else {
-                                      await onAdvanceOrderStage(ord);
-                                      notifySaved(
-                                        `Advanced ${ord.orderNumber} to the next production stage!`
-                                      );
-                                    }
-                                  }}
-                                  className="px-3 py-1 text-[11px] font-bold text-white bg-[#001E5A] hover:bg-[#0088FF] disabled:opacity-40 rounded-md transition-colors"
-                                >
-                                  {isPendingApproval
-                                    ? 'Mark Order Received →'
-                                    : ord.status === 'completed'
-                                    ? 'Ready for Delivery ✓'
-                                    : 'Advance Next Stage →'}
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
-                              {/* 1a. Order Status: Pending */}
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  await onSetOrderStage(ord, 'pending_approval');
-                                  notifySaved(
-                                    `Set ${ord.orderNumber} to Order Status: Pending.`
-                                  );
-                                }}
-                                className={`p-3 rounded-lg border text-left text-xs transition-colors ${
-                                  isPendingApproval
-                                    ? 'bg-amber-500 text-white border-amber-600 font-bold shadow-xs'
-                                    : 'bg-white text-slate-600 border-slate-200 hover:border-amber-400'
-                                }`}
-                              >
-                                <div className="font-mono-tabular text-[10px] opacity-85">
-                                  01a · PENDING
-                                </div>
-                                <div className="font-semibold mt-0.5 leading-tight">
-                                  1. Order Status: Pending
-                                </div>
-                              </button>
-
-                              {/* 1b, 2, 3, 4 Stages */}
-                              {PIPELINE_STAGES.map((st, idx) => {
-                                const mappedOrdIdx = isPendingApproval
-                                  ? -1
-                                  : ord.status === 'queued' ||
-                                    ord.status === 'ingesting'
-                                  ? 0
-                                  : ord.status === 'clipping' ||
-                                    ord.status === 'retouching'
-                                  ? 1
-                                  : ord.status === 'qa_review'
-                                  ? 2
-                                  : ord.status === 'completed'
-                                  ? 3
-                                  : 0;
-                                const isCurrent =
-                                  !isPendingApproval && idx === mappedOrdIdx;
-                                const isPassed =
-                                  !isPendingApproval && idx < mappedOrdIdx;
-
-                                const btnLabel =
-                                  idx === 0
-                                    ? '1. Order Status: Received'
-                                    : `${idx + 1}. ${st.label}`;
-
-                                return (
-                                  <button
-                                    key={st.status}
-                                    type="button"
-                                    onClick={async () => {
-                                      await onSetOrderStage(
-                                        ord,
-                                        st.status,
-                                        st.status === 'completed'
-                                          ? ord.deliveryDownloadUrl
-                                          : undefined
-                                      );
-                                      notifySaved(
-                                        st.status === 'completed'
-                                          ? `Order ${ord.orderNumber} set to "4. Ready for Delivery"! Download link activated in Client Portal & email sent to customer.`
-                                          : `Updated ${ord.orderNumber} to "${btnLabel}" (${st.progress}%)!`
-                                      );
-                                    }}
-                                    className={`p-3 rounded-lg border text-left text-xs transition-colors ${
-                                      isCurrent
-                                        ? 'bg-[#001E5A] text-white border-[#001E5A] font-bold shadow-xs'
-                                        : isPassed
-                                        ? 'bg-emerald-50 text-emerald-900 border-emerald-300 font-semibold'
-                                        : 'bg-white text-[#001E5A] border-slate-200 hover:border-[#0088FF]'
-                                    }`}
-                                  >
-                                    <div className="flex items-center justify-between font-mono-tabular text-[10px]">
-                                      <span>
-                                        {st.stepIndex} · {st.progress}%
-                                      </span>
-                                      {(isCurrent || isPassed) && (
-                                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                                      )}
-                                    </div>
-                                    <div className="font-semibold mt-0.5 leading-tight">
-                                      {btnLabel}
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-
-                            {/* Stage 4: Ready for Delivery — Attach Download Link & Send Email to Customer */}
-                            <div className="p-3.5 rounded-xl bg-white border border-blue-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                              <div className="flex-1 space-y-1">
-                                <label className="block text-[11px] font-bold text-[#001E5A]">
-                                  4. Ready for Delivery — Customer Download Link (Google Drive, Dropbox, WeTransfer, or Direct ZIP URL)
-                                </label>
-                                <input
-                                  type="text"
-                                  value={ord.deliveryDownloadUrl || ''}
-                                  onChange={(e) => {
-                                    if (onUpdateOrderInvoiceDetails) {
-                                      onUpdateOrderInvoiceDetails(ord.id, {
-                                        deliveryDownloadUrl: e.target.value,
-                                      });
-                                    }
-                                  }}
-                                  placeholder="https://drive.google.com/drive/folders/... or https://wetransfer.com/..."
-                                  className="w-full px-3 py-2 text-xs font-mono-tabular bg-[#F8FAFC] border border-slate-300 rounded-lg focus:outline-none focus:border-[#0088FF]"
-                                />
-                              </div>
-
-                              <div className="flex items-center gap-2 self-end md:self-center shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    await onSetOrderStage(
-                                      ord,
-                                      'completed',
-                                      ord.deliveryDownloadUrl || ''
-                                    );
-                                    notifySaved(
-                                      `Order ${ord.orderNumber} marked "4. Ready for Delivery"! Download link added to Client Portal and email notification sent to ${
-                                        ord.clientEmail || ord.clientName
-                                      }.`
-                                    );
-                                  }}
-                                  className="px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
-                                >
-                                  <Download className="w-3.5 h-3.5" />
-                                  <span>
-                                    Set Ready for Delivery & Send Download Link Email →
-                                  </span>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ===================================================================
-              MODULE 2: INVOICES (PAID/PENDING), LINE ITEM EDITOR & COMPANY SETUP
-             =================================================================== */}
-          {activeTab === 'invoices_billing' && (
-            <div className="space-y-8">
-              {/* SECTION A: CUSTOMER INVOICES LIST (CLICK EDIT ICON TO EDIT & SAVE) */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-3">
-                  <div>
-                    <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
-                      CUSTOMER INVOICES & PAYMENT STATUS ({orders.length} INVOICES)
-                    </p>
-                    <h2 className="text-lg font-bold text-[#001E5A]">
-                      Customer Invoices List — Click Edit Icon to Modify Line Items, Terms, Option or BILL TO
-                    </h2>
-                  </div>
-                  <span className="text-xs font-mono-tabular text-slate-500">
-                    Click &ldquo;Edit&rdquo; on any invoice, make changes, and click &ldquo;Save&rdquo; to update
-                  </span>
-                </div>
-
-                <div className="space-y-3.5">
-                  {orders.map((ord) => {
-                    const invRef = `INV-${ord.orderNumber}`;
-                    const ordInvoiceStatus: InvoicePaymentStatus =
-                      invoiceStatusMap[invRef] ||
-                      invoiceStatusMap[ord.orderNumber] ||
-                      'pending';
-                    const ordPaymentTerms: InvoicePaymentTerms =
-                      ord.paymentTerms ||
-                      invoicePaymentInfo.defaultPaymentTerms ||
-                      'Project';
-                    const ordPaymentOption: InvoicePaymentOption =
-                      ord.paymentOption ||
-                      invoicePaymentInfo.defaultPaymentOption ||
-                      'PayPal';
-                    const isEditingThisInvoice =
-                      editingOrderInvoiceDraft?.orderId === ord.id;
-
-                    return (
-                      <div
-                        key={ord.id}
-                        className={`p-4 rounded-xl border transition-all ${
-                          isEditingThisInvoice
-                            ? 'bg-blue-50/40 border-[#0088FF] shadow-xs space-y-4'
-                            : 'bg-[#F8FAFC] border-slate-200 space-y-2.5'
-                        }`}
+                return (
+                  <div className="bg-white border-2 border-[#0088FF] rounded-2xl p-6 space-y-5 shadow-sm">
+                    {/* Back to Order List Header */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAdminOrderId(null)}
+                        className="px-3.5 py-2 rounded-lg bg-[#EAF3FC] hover:bg-[#001E5A] text-[#001E5A] hover:text-white text-xs font-bold transition-colors flex items-center gap-1.5"
                       >
-                        {/* Clean Summary Row */}
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="space-y-1">
-                            <div className="flex flex-wrap items-center gap-2 text-xs font-mono-tabular">
-                              <span className="font-bold text-[#001E5A] text-sm">
-                                {invRef}
-                              </span>
-                              <span>·</span>
-                              <span className="text-slate-500">
-                                Order: {ord.orderNumber}
-                              </span>
-                              <span>·</span>
-                              <span className="px-2 py-0.5 rounded bg-blue-50 text-[#001E5A] border border-blue-200 font-bold text-[11px]">
-                                Terms: {ordPaymentTerms}
-                              </span>
-                              <span className="px-2 py-0.5 rounded bg-blue-50 text-[#0088FF] border border-blue-200 font-bold text-[11px]">
-                                Option: {ordPaymentOption}
-                              </span>
-                              <span>·</span>
-                              {ordInvoiceStatus === 'paid' ? (
-                                <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[11px]">
-                                  PAID & CONFIRMED ✓
-                                </span>
-                              ) : (
-                                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[11px]">
-                                  PENDING PAYMENT
-                                </span>
-                              )}
-                            </div>
+                        <span>← Back to Order List ({tabOrders.length})</span>
+                      </button>
 
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-                              <span className="font-bold text-[#001E5A]">
-                                {ord.projectTitle}
-                              </span>
-                              <span className="font-mono-tabular text-slate-600">
-                                Qty: <strong>{ord.imageCount}</strong> frames
-                              </span>
-                              <span className="font-mono-tabular font-bold text-[#0088FF]">
-                                Total: ${ord.totalPrice.toFixed(2)} USD
-                              </span>
-                              <span className="text-slate-600">
-                                BILL TO:{' '}
-                                <strong>
-                                  {[
-                                    ord.companyName,
-                                    ord.clientName,
-                                    ord.clientEmail,
-                                    ord.clientPhone,
-                                  ]
-                                    .filter(Boolean)
-                                    .join(' · ') || 'Client Account'}
-                                </strong>
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                await onUpdateInvoiceStatus(
-                                  invRef,
-                                  'paid',
-                                  ord.orderNumber
-                                );
-                                notifySaved(
-                                  `Invoice ${invRef} marked as PAID ✓!`
-                                );
-                              }}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                                ordInvoiceStatus === 'paid'
-                                  ? 'bg-emerald-600 text-white'
-                                  : 'bg-white text-emerald-800 border border-emerald-300 hover:bg-emerald-50'
-                              }`}
-                            >
-                              Mark PAID ✓
-                            </button>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                await onUpdateInvoiceStatus(
-                                  invRef,
-                                  'pending',
-                                  ord.orderNumber
-                                );
-                                notifySaved(
-                                  `Invoice ${invRef} set to PENDING.`
-                                );
-                              }}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                                ordInvoiceStatus === 'pending'
-                                  ? 'bg-amber-500 text-white'
-                                  : 'bg-white text-amber-800 border border-amber-300 hover:bg-amber-50'
-                              }`}
-                            >
-                              Set PENDING
-                            </button>
-
-                            {!isEditingThisInvoice ? (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setEditingOrderInvoiceDraft({
-                                    orderId: ord.id,
-                                    paymentTerms: ordPaymentTerms,
-                                    paymentOption: ordPaymentOption,
-                                    projectTitle: ord.projectTitle || '',
-                                    imageCount: ord.imageCount || 1,
-                                    totalPrice: ord.totalPrice || 0,
-                                    companyName: ord.companyName || '',
-                                    clientName: ord.clientName || '',
-                                    clientAddress: ord.clientAddress || '',
-                                    clientPhone: ord.clientPhone || '',
-                                    clientWebsite: ord.clientWebsite || '',
-                                    clientEmail: ord.clientEmail || '',
-                                  })
-                                }
-                                className="px-3 py-1.5 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5"
-                              >
-                                <Pencil className="w-3.5 h-3.5 text-[#0088FF]" />
-                                <span>Edit</span>
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setEditingOrderInvoiceDraft(null)
-                                }
-                                className="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold transition-colors flex items-center gap-1"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                                <span>Cancel</span>
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Collapsible Edit Form (Only shown when Edit icon is clicked) */}
-                        {isEditingThisInvoice && editingOrderInvoiceDraft && (
-                          <div className="pt-3 border-t border-blue-200 space-y-3.5 bg-white p-4 rounded-xl">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
-                              <div>
-                                <label className="block text-[11px] font-bold text-[#001E5A] mb-1">
-                                  Payment Terms
-                                </label>
-                                <select
-                                  value={editingOrderInvoiceDraft.paymentTerms}
-                                  onChange={(e) =>
-                                    setEditingOrderInvoiceDraft({
-                                      ...editingOrderInvoiceDraft,
-                                      paymentTerms: e.target
-                                        .value as InvoicePaymentTerms,
-                                    })
-                                  }
-                                  className="w-full px-2.5 py-1.5 text-xs font-bold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
-                                >
-                                  <option value="Project">Project</option>
-                                  <option value="Monthly">Monthly</option>
-                                </select>
-                              </div>
-
-                              <div>
-                                <label className="block text-[11px] font-bold text-[#0088FF] mb-1">
-                                  Payment Option
-                                </label>
-                                <select
-                                  value={editingOrderInvoiceDraft.paymentOption}
-                                  onChange={(e) =>
-                                    setEditingOrderInvoiceDraft({
-                                      ...editingOrderInvoiceDraft,
-                                      paymentOption: e.target
-                                        .value as InvoicePaymentOption,
-                                    })
-                                  }
-                                  className="w-full px-2.5 py-1.5 text-xs font-bold text-[#0088FF] bg-white border border-slate-300 rounded-lg"
-                                >
-                                  <option value="PayPal">
-                                    PayPal (
-                                    {invoicePaymentInfo.paypalEmail ||
-                                      'hello@clippasia.com'}
-                                    )
-                                  </option>
-                                  <option value="Bank">
-                                    Bank (
-                                    {invoicePaymentInfo.bankName ||
-                                      'Dutch Bangla Bank PLC'}
-                                    )
-                                  </option>
-                                </select>
-                              </div>
-
-                              <div className="lg:col-span-2">
-                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                                  Invoice Project / Service Description
-                                </label>
-                                <input
-                                  type="text"
-                                  value={editingOrderInvoiceDraft.projectTitle}
-                                  onChange={(e) =>
-                                    setEditingOrderInvoiceDraft({
-                                      ...editingOrderInvoiceDraft,
-                                      projectTitle: e.target.value,
-                                    })
-                                  }
-                                  className="w-full px-2.5 py-1.5 text-xs font-semibold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                                  Quantity (Frames)
-                                </label>
-                                <input
-                                  type="number"
-                                  min={1}
-                                  value={editingOrderInvoiceDraft.imageCount}
-                                  onChange={(e) =>
-                                    setEditingOrderInvoiceDraft({
-                                      ...editingOrderInvoiceDraft,
-                                      imageCount: Number(e.target.value),
-                                    })
-                                  }
-                                  className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                                  Invoice Total Amount ($ USD)
-                                </label>
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  min={0}
-                                  value={editingOrderInvoiceDraft.totalPrice}
-                                  onChange={(e) =>
-                                    setEditingOrderInvoiceDraft({
-                                      ...editingOrderInvoiceDraft,
-                                      totalPrice: Number(e.target.value),
-                                    })
-                                  }
-                                  className="w-full px-2.5 py-1.5 text-xs font-mono-tabular font-bold text-[#0088FF] bg-white border border-slate-300 rounded-lg"
-                                />
-                              </div>
-                            </div>
-
-                            {/* Customer BILL TO Fields */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5 pt-2 border-t border-slate-200">
-                              <div>
-                                <label className="block text-[10px] font-semibold text-slate-500 mb-1">
-                                  BILL TO · Company Name
-                                </label>
-                                <input
-                                  type="text"
-                                  value={editingOrderInvoiceDraft.companyName}
-                                  onChange={(e) =>
-                                    setEditingOrderInvoiceDraft({
-                                      ...editingOrderInvoiceDraft,
-                                      companyName: e.target.value,
-                                    })
-                                  }
-                                  placeholder="(Blank = hidden)"
-                                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-semibold text-slate-500 mb-1">
-                                  BILL TO · Contact Person
-                                </label>
-                                <input
-                                  type="text"
-                                  value={editingOrderInvoiceDraft.clientName}
-                                  onChange={(e) =>
-                                    setEditingOrderInvoiceDraft({
-                                      ...editingOrderInvoiceDraft,
-                                      clientName: e.target.value,
-                                    })
-                                  }
-                                  placeholder="(Blank = hidden)"
-                                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-semibold text-slate-500 mb-1">
-                                  BILL TO · Address
-                                </label>
-                                <input
-                                  type="text"
-                                  value={editingOrderInvoiceDraft.clientAddress}
-                                  onChange={(e) =>
-                                    setEditingOrderInvoiceDraft({
-                                      ...editingOrderInvoiceDraft,
-                                      clientAddress: e.target.value,
-                                    })
-                                  }
-                                  placeholder="(Blank = hidden)"
-                                  className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-semibold text-slate-500 mb-1">
-                                  BILL TO · Phone No.
-                                </label>
-                                <input
-                                  type="text"
-                                  value={editingOrderInvoiceDraft.clientPhone}
-                                  onChange={(e) =>
-                                    setEditingOrderInvoiceDraft({
-                                      ...editingOrderInvoiceDraft,
-                                      clientPhone: e.target.value,
-                                    })
-                                  }
-                                  placeholder="(Blank = hidden)"
-                                  className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-semibold text-slate-500 mb-1">
-                                  BILL TO · Website
-                                </label>
-                                <input
-                                  type="text"
-                                  value={editingOrderInvoiceDraft.clientWebsite}
-                                  onChange={(e) =>
-                                    setEditingOrderInvoiceDraft({
-                                      ...editingOrderInvoiceDraft,
-                                      clientWebsite: e.target.value,
-                                    })
-                                  }
-                                  placeholder="(Blank = hidden)"
-                                  className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-semibold text-slate-500 mb-1">
-                                  BILL TO · Email
-                                </label>
-                                <input
-                                  type="text"
-                                  value={editingOrderInvoiceDraft.clientEmail}
-                                  onChange={(e) =>
-                                    setEditingOrderInvoiceDraft({
-                                      ...editingOrderInvoiceDraft,
-                                      clientEmail: e.target.value,
-                                    })
-                                  }
-                                  placeholder="(Blank = hidden)"
-                                  className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
-                                />
-                              </div>
-                            </div>
-
-                            <div className="flex items-center justify-end gap-2 pt-2">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setEditingOrderInvoiceDraft(null)
-                                }
-                                className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-100"
-                              >
-                                Cancel
-                              </button>
-                              <button
-                                type="button"
-                                onClick={async () => {
-                                  if (onUpdateOrderInvoiceDetails) {
-                                    await onUpdateOrderInvoiceDetails(ord.id, {
-                                      paymentTerms:
-                                        editingOrderInvoiceDraft.paymentTerms,
-                                      paymentOption:
-                                        editingOrderInvoiceDraft.paymentOption,
-                                      projectTitle:
-                                        editingOrderInvoiceDraft.projectTitle,
-                                      imageCount:
-                                        editingOrderInvoiceDraft.imageCount,
-                                      totalPrice:
-                                        editingOrderInvoiceDraft.totalPrice,
-                                      companyName:
-                                        editingOrderInvoiceDraft.companyName,
-                                      clientName:
-                                        editingOrderInvoiceDraft.clientName,
-                                      clientAddress:
-                                        editingOrderInvoiceDraft.clientAddress,
-                                      clientPhone:
-                                        editingOrderInvoiceDraft.clientPhone,
-                                      clientWebsite:
-                                        editingOrderInvoiceDraft.clientWebsite,
-                                      clientEmail:
-                                        editingOrderInvoiceDraft.clientEmail,
-                                    });
-                                  }
-                                  setEditingOrderInvoiceDraft(null);
-                                  notifySaved(
-                                    `Saved & updated invoice ${invRef} details!`
-                                  );
-                                }}
-                                className="px-5 py-2 rounded-lg bg-[#001E5A] hover:bg-[#0088FF] text-white text-xs font-bold transition-colors flex items-center gap-1.5"
-                              >
-                                <CheckCircle2 className="w-4 h-4" />
-                                <span>Save & Update Invoice</span>
-                              </button>
-                            </div>
-                          </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {ord.reopenedByChat && (
+                          <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold">
+                            💬 Reopened by New Chat Reply (Confirm Stage 4 to Move Back to Complete List)
+                          </span>
+                        )}
+                        {onDeleteOrder && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await onDeleteOrder(ord);
+                              setSelectedAdminOrderId(null);
+                              notifySaved(
+                                `Deleted Order ${ord.orderNumber} (${ord.clientName}).`
+                              );
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-600 text-red-700 hover:text-white border border-red-200 text-xs font-bold transition-colors flex items-center gap-1.5"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Delete Order</span>
+                          </button>
                         )}
                       </div>
-                    );
-                  })}
+                    </div>
+
+                    {/* Top Row: Order Summary + Client Name + Service Name + Uploaded File Link + Working Instruction */}
+                    <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4">
+                      <div className="space-y-2 flex-1 min-w-[280px]">
+                        <div className="flex flex-wrap items-center gap-2 text-xs font-mono-tabular">
+                          <span className="font-bold text-[#001E5A] text-base">
+                            {ord.orderNumber}
+                          </span>
+                          <span>·</span>
+                          <span className="font-bold text-slate-800">
+                            Client: {ord.clientName || 'Studio Client'}
+                          </span>
+                          {ord.companyName && (
+                            <>
+                              <span>·</span>
+                              <span className="text-slate-600">
+                                Company: {ord.companyName}
+                              </span>
+                            </>
+                          )}
+                          <span>·</span>
+                          {isPendingApproval ? (
+                            <span className="text-amber-700 font-bold">
+                              ORDER STATUS: PENDING APPROVAL
+                            </span>
+                          ) : ord.clientCompleted && !ord.reopenedByChat ? (
+                            <span className="text-emerald-700 font-bold">
+                              5. COMPLETE ORDER ✓ (100%)
+                            </span>
+                          ) : (
+                            <span className="text-emerald-700 font-bold">
+                              APPROVED ·{' '}
+                              {activeStageObj?.label.toUpperCase() ||
+                                ord.status.toUpperCase()}{' '}
+                              ({ord.progressPercent}%)
+                            </span>
+                          )}
+                          <span>·</span>
+                          <span
+                            className={
+                              ordInvoiceStatus === 'paid'
+                                ? 'text-emerald-700 font-bold'
+                                : 'text-amber-700 font-bold'
+                            }
+                          >
+                            INVOICE ({ord.orderNumber}):{' '}
+                            {ordInvoiceStatus.toUpperCase()}
+                          </span>
+                        </div>
+
+                        <p className="font-bold text-[#001E5A] text-sm">
+                          {ord.projectTitle}
+                        </p>
+
+                        {/* 4 Key Order Fields Requested: 1. Client Name, 2. Service Name, 3. Client Uploaded Image/File Download Link, 4. Working Instruction */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1 text-xs">
+                          <div className="p-2.5 rounded-lg bg-[#F8FAFC] border border-slate-200">
+                            <span className="block text-[10px] font-mono-tabular uppercase text-slate-500 font-bold">
+                              1. Client Name
+                            </span>
+                            <span className="font-bold text-[#001E5A]">
+                              {ord.clientName || 'Studio Client'}
+                            </span>
+                            {ord.clientEmail && (
+                              <span className="block text-[11px] text-slate-500 font-mono-tabular truncate">
+                                {ord.clientEmail}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="p-2.5 rounded-lg bg-[#F8FAFC] border border-slate-200">
+                            <span className="block text-[10px] font-mono-tabular uppercase text-slate-500 font-bold">
+                              2. Service Name
+                            </span>
+                            <span className="font-bold text-[#0088FF]">
+                              {resolveOrderServiceName(ord)}
+                            </span>
+                            <span className="block text-[11px] text-slate-500 font-mono-tabular">
+                              {ord.imageCount} frames · ${ord.totalPrice.toFixed(2)} USD
+                            </span>
+                          </div>
+
+                          <div className="p-2.5 rounded-lg bg-[#F8FAFC] border border-slate-200">
+                            <span className="block text-[10px] font-mono-tabular uppercase text-slate-500 font-bold mb-1">
+                              3. Client Uploaded File / Download Link
+                            </span>
+                            {renderOrderClientFilesDownload(ord)}
+                          </div>
+
+                          <div className="p-2.5 rounded-lg bg-[#F8FAFC] border border-slate-200">
+                            <span className="block text-[10px] font-mono-tabular uppercase text-slate-500 font-bold">
+                              4. Working Instruction
+                            </span>
+                            <span className="text-slate-700 leading-snug block mt-0.5">
+                              {ord.instructions || 'Standard studio SOP.'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right Actions: Approve Order (One-Way) & Mark Invoice PAID (One-Way) */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {isPendingApproval ? (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await onApproveOrder(ord);
+                              notifySaved(
+                                `Order ${ord.orderNumber} APPROVED and moved to 1. Order Status: Received!`
+                              );
+                            }}
+                            className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Approve Order ✓</span>
+                          </button>
+                        ) : (
+                          <span
+                            title="Order is approved and in active production (cannot revert to Pending)"
+                            className="px-4 py-2 text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 rounded-lg flex items-center gap-1.5 select-none"
+                          >
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                            <span>Order Approved ✓</span>
+                          </span>
+                        )}
+
+                        {ordInvoiceStatus === 'pending' ? (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await onUpdateInvoiceStatus(
+                                ord.orderNumber,
+                                'paid',
+                                ord.orderNumber
+                              );
+                              notifySaved(
+                                `Invoice ${ord.orderNumber} permanently marked as PAID ✓ in Client Portal!`
+                              );
+                            }}
+                            className="px-3.5 py-2 text-xs font-bold text-white bg-[#0088FF] hover:bg-[#001E5A] rounded-lg transition-colors flex items-center gap-1.5"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Mark Invoice PAID ✓</span>
+                          </button>
+                        ) : (
+                          <span
+                            title="Invoice is marked PAID (cannot revert to Pending)"
+                            className="px-3.5 py-2 text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 rounded-lg flex items-center gap-1.5 select-none"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Invoice PAID ✓</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 5-Stage Customer Work Process Tracker */}
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span className="font-bold text-[#001E5A]">
+                          Real-Time 5-Stage Production Progression (Forward-Only — Click next stage to advance):
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono-tabular text-[#0088FF] font-semibold">
+                            Current Status:{' '}
+                            {isPendingApproval
+                              ? '1. Order Status: Pending (0%)'
+                              : ord.clientCompleted && !ord.reopenedByChat
+                              ? '05 Complete Order (100%)'
+                              : `${activeStageObj?.stepIndex || ''} ${
+                                  activeStageObj?.label || ord.status
+                                } (${ord.progressPercent}%)`}
+                          </span>
+                          <button
+                            type="button"
+                            disabled={
+                              !isPendingApproval &&
+                              ord.status === 'completed' &&
+                              !ord.reopenedByChat
+                            }
+                            onClick={async () => {
+                              if (isPendingApproval) {
+                                await onApproveOrder(ord);
+                                notifySaved(
+                                  `Order ${ord.orderNumber} marked as Received (Stage 01 · 25%).`
+                                );
+                              } else if (ord.reopenedByChat) {
+                                await onSetOrderStage(
+                                  ord,
+                                  'completed',
+                                  ord.deliveryDownloadUrl || ''
+                                );
+                                notifySaved(
+                                  `Order ${ord.orderNumber} confirmed and moved back to Complete Order list!`
+                                );
+                              } else {
+                                await onAdvanceOrderStage(ord);
+                                notifySaved(
+                                  `Advanced ${ord.orderNumber} to the next production stage!`
+                                );
+                              }
+                            }}
+                            className="px-3 py-1 text-[11px] font-bold text-white bg-[#001E5A] hover:bg-[#0088FF] disabled:opacity-40 rounded-md transition-colors"
+                          >
+                            {isPendingApproval
+                              ? 'Mark Order Received →'
+                              : ord.reopenedByChat
+                              ? 'Confirm & Move to Complete List ✓'
+                              : ord.status === 'completed'
+                              ? 'Ready for Delivery ✓'
+                              : 'Advance Next Stage →'}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
+                        {/* 1a. Order Status: Pending (Locked once approved/received) */}
+                        <button
+                          type="button"
+                          disabled={!isPendingApproval}
+                          className={`p-3 rounded-lg border text-left text-xs transition-colors ${
+                            isPendingApproval
+                              ? 'bg-amber-500 text-white border-amber-600 font-bold shadow-xs'
+                              : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed opacity-70'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between font-mono-tabular text-[10px]">
+                            <span>01a · PENDING</span>
+                            {!isPendingApproval && (
+                              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                            )}
+                          </div>
+                          <div className="font-semibold mt-0.5 leading-tight">
+                            1. Order Status: Pending
+                          </div>
+                        </button>
+
+                        {/* 1b, 2, 3, 4 Stages (Forward-Only Progression) */}
+                        {PIPELINE_STAGES.map((st, idx) => {
+                          const mappedOrdIdx = isPendingApproval
+                            ? -1
+                            : ord.status === 'queued' ||
+                              ord.status === 'ingesting'
+                            ? 0
+                            : ord.status === 'clipping' ||
+                              ord.status === 'retouching'
+                            ? 1
+                            : ord.status === 'qa_review'
+                            ? 2
+                            : ord.status === 'completed'
+                            ? 3
+                            : 0;
+                          const isCurrent =
+                            !isPendingApproval &&
+                            idx === mappedOrdIdx &&
+                            !(ord.clientCompleted && !ord.reopenedByChat);
+                          const isPassed =
+                            !isPendingApproval &&
+                            (idx < mappedOrdIdx ||
+                              Boolean(ord.clientCompleted && !ord.reopenedByChat));
+                          const isBackwardOrCurrent = isPassed || isCurrent;
+
+                          const btnLabel =
+                            idx === 0
+                              ? '1. Order Status: Received'
+                              : `${idx + 1}. ${st.label}`;
+
+                          return (
+                            <button
+                              key={st.status}
+                              type="button"
+                              disabled={
+                                isBackwardOrCurrent &&
+                                !(st.status === 'completed' && ord.reopenedByChat)
+                              }
+                              onClick={async () => {
+                                if (
+                                  isBackwardOrCurrent &&
+                                  !(st.status === 'completed' && ord.reopenedByChat)
+                                ) {
+                                  return;
+                                }
+                                await onSetOrderStage(
+                                  ord,
+                                  st.status,
+                                  st.status === 'completed'
+                                    ? ord.deliveryDownloadUrl
+                                    : undefined
+                                );
+                                notifySaved(
+                                  st.status === 'completed'
+                                    ? `Order ${ord.orderNumber} set to "4. Ready for Delivery" and moved to Complete Order!`
+                                    : `Advanced ${ord.orderNumber} to "${btnLabel}" (${st.progress}%)!`
+                                );
+                              }}
+                              className={`p-3 rounded-lg border text-left text-xs transition-colors ${
+                                isCurrent
+                                  ? 'bg-[#001E5A] text-white border-[#001E5A] font-bold shadow-xs cursor-default'
+                                  : isPassed
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold cursor-not-allowed opacity-85'
+                                  : 'bg-white text-[#001E5A] border-slate-200 hover:border-[#0088FF] hover:bg-blue-50/40'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between font-mono-tabular text-[10px]">
+                                <span>
+                                  {st.stepIndex} · {st.progress}%
+                                </span>
+                                {(isCurrent || isPassed) && (
+                                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                                )}
+                              </div>
+                              <div className="font-semibold mt-0.5 leading-tight">
+                                {btnLabel}
+                              </div>
+                            </button>
+                          );
+                        })}
+
+                        {/* Stage 5: Complete Order (Completed by Customer in Portal) */}
+                        <div
+                          className={`p-3 rounded-lg border text-left text-xs ${
+                            ord.clientCompleted && !ord.reopenedByChat
+                              ? 'bg-emerald-600 text-white border-emerald-700 font-bold shadow-xs'
+                              : 'bg-slate-50 text-slate-500 border-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between font-mono-tabular text-[10px]">
+                            <span>05 · COMPLETE</span>
+                            {ord.clientCompleted && !ord.reopenedByChat && (
+                              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-white" />
+                            )}
+                          </div>
+                          <div className="font-semibold mt-0.5 leading-tight">
+                            5. Complete Order
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* PER-ORDER INDIVIDUAL CHAT & ADMIN REPLY BOX (Placed directly above "4. Ready for Delivery — Customer Download Link" as requested) */}
+                      <div className="rounded-xl bg-white border-2 border-blue-200 overflow-hidden shadow-2xs">
+                        <div className="px-4 py-2.5 bg-[#EAF3FC] border-b border-blue-200 flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <MessageSquare className="w-4 h-4 text-[#0088FF]" />
+                            <span className="text-xs font-bold text-[#001E5A]">
+                              Order Individual Chat & Client Messages — {ord.orderNumber} ({ord.clientName})
+                            </span>
+                          </div>
+                          <span className="text-[11px] font-mono-tabular font-bold text-[#0088FF]">
+                            {ordMessages.length} Message{ordMessages.length === 1 ? '' : 's'}
+                          </span>
+                        </div>
+
+                        <div className="p-4 space-y-2.5 max-h-60 overflow-y-auto bg-[#F8FAFC]">
+                          {ordMessages.length === 0 ? (
+                            <p className="text-xs text-slate-500 text-center py-3">
+                              No messages in Order <strong>{ord.orderNumber}</strong> chat yet. Send a message below to reply directly to {ord.clientName || 'the client'}.
+                            </p>
+                          ) : (
+                            ordMessages.map((msg) => {
+                              const isSpecialist = msg.senderRole === 'specialist';
+                              return (
+                                <div
+                                  key={msg.id}
+                                  className={`flex flex-col ${
+                                    isSpecialist ? 'items-end' : 'items-start'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-1.5 text-[10px] font-mono-tabular text-slate-500 mb-0.5">
+                                    <span className="font-bold text-[#001E5A]">
+                                      {msg.senderName}
+                                    </span>
+                                    <span>·</span>
+                                    <span>
+                                      {isSpecialist ? 'Studio Admin' : 'Client'}
+                                    </span>
+                                  </div>
+                                  <div
+                                    className={`max-w-xl px-3.5 py-2 rounded-xl text-xs leading-relaxed border ${
+                                      isSpecialist
+                                        ? 'bg-[#001E5A] text-white border-[#001E5A]'
+                                        : 'bg-white text-slate-800 border-blue-300 shadow-2xs'
+                                    }`}
+                                  >
+                                    <p>{msg.body}</p>
+                                    {msg.attachmentName && (
+                                      <p className="mt-1 pt-1 border-t border-slate-300/30 font-mono-tabular text-[11px] opacity-90 break-all">
+                                        Attachment / Link: {msg.attachmentName}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+
+                        <div className="p-3 bg-white border-t border-blue-200 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                          <input
+                            type="text"
+                            value={chatDraft}
+                            onChange={(e) =>
+                              setAdminChatInputs((prev) => ({
+                                ...prev,
+                                [ord.id]: e.target.value,
+                              }))
+                            }
+                            onKeyDown={async (e) => {
+                              if (
+                                e.key === 'Enter' &&
+                                chatDraft.trim() &&
+                                onSendOrderMessage
+                              ) {
+                                e.preventDefault();
+                                const text = chatDraft.trim();
+                                setAdminChatInputs((prev) => ({
+                                  ...prev,
+                                  [ord.id]: '',
+                                }));
+                                await onSendOrderMessage(ord, text, '');
+                                notifySaved(
+                                  `Sent chat reply to ${ord.clientName} on Order ${ord.orderNumber}!`
+                                );
+                              }
+                            }}
+                            placeholder={`Reply to ${ord.clientName || 'Client'} regarding Order ${ord.orderNumber}...`}
+                            className="flex-1 px-3.5 py-2 text-xs bg-[#F8FAFC] border border-slate-300 rounded-lg focus:outline-none focus:border-[#0088FF]"
+                          />
+                          <button
+                            type="button"
+                            disabled={!chatDraft.trim() || !onSendOrderMessage}
+                            onClick={async () => {
+                              if (!chatDraft.trim() || !onSendOrderMessage) return;
+                              const text = chatDraft.trim();
+                              setAdminChatInputs((prev) => ({
+                                ...prev,
+                                [ord.id]: '',
+                              }));
+                              await onSendOrderMessage(ord, text, '');
+                              notifySaved(
+                                `Sent chat reply to ${ord.clientName} on Order ${ord.orderNumber}!`
+                              );
+                            }}
+                            className="px-4 py-2 rounded-lg bg-[#0088FF] hover:bg-[#001E5A] disabled:opacity-50 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5 shrink-0"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                            <span>Reply to Client →</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Stage 4: Ready for Delivery — Attach Download Link & Send Email to Customer */}
+                      <div className="p-3.5 rounded-xl bg-white border border-blue-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        <div className="flex-1 space-y-1">
+                          <label className="block text-[11px] font-bold text-[#001E5A]">
+                            4. Ready for Delivery — Customer Download Link (Google Drive, Dropbox, WeTransfer, or Direct ZIP URL)
+                          </label>
+                          <input
+                            type="text"
+                            value={ord.deliveryDownloadUrl || ''}
+                            onChange={(e) => {
+                              if (onUpdateOrderInvoiceDetails) {
+                                onUpdateOrderInvoiceDetails(ord.id, {
+                                  deliveryDownloadUrl: e.target.value,
+                                });
+                              }
+                            }}
+                            placeholder="https://drive.google.com/drive/folders/... or https://wetransfer.com/..."
+                            className="w-full px-3 py-2 text-xs font-mono-tabular bg-[#F8FAFC] border border-slate-300 rounded-lg focus:outline-none focus:border-[#0088FF]"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await onSetOrderStage(
+                                ord,
+                                'completed',
+                                ord.deliveryDownloadUrl || ''
+                              );
+                              setSelectedAdminOrderId(null);
+                              notifySaved(
+                                `Order ${ord.orderNumber} marked "4. Ready for Delivery", moved to Complete Order list, and download link email sent to ${
+                                  ord.clientEmail || ord.clientName
+                                }!`
+                              );
+                            }}
+                            className="px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>
+                              Set Ready for Delivery & Send Download Link Email →
+                            </span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              };
+
+              return (
+                <div className="space-y-6">
+                  {/* Top Switcher Bar between Active Pipeline Orders and Complete Orders */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
+                    <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
+                      <div>
+                        <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
+                          {isCompleteOrdersTab
+                            ? 'COMPLETE ORDER & DELIVERED ARCHIVE LIST'
+                            : 'ACTIVE CUSTOMER ORDERS & 5-STAGE WORK PIPELINE'}
+                        </p>
+                        <h2 className="text-lg font-bold text-[#001E5A]">
+                          {isCompleteOrdersTab
+                            ? `Complete Order List (${completedPipelineOrders.length}) — Click Edit to Send New Download Link or Open Order Chat`
+                            : `Active & Pending Orders List (${activePipelineOrders.length}) — Click Any Order to Open Individual Chat & Stages`}
+                        </h2>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedAdminOrderId(null);
+                            setActiveTab('plans_and_orders');
+                          }}
+                          className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-colors ${
+                            !isCompleteOrdersTab
+                              ? 'bg-[#001E5A] text-white'
+                              : 'bg-slate-100 text-[#001E5A] hover:bg-slate-200'
+                          }`}
+                        >
+                          Active / Pending Orders ({activePipelineOrders.length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedAdminOrderId(null);
+                            setActiveTab('complete_orders');
+                          }}
+                          className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 ${
+                            isCompleteOrdersTab
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
+                          }`}
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Complete Order ({completedPipelineOrders.length})</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* SINGLE SELECTED ORDER WORKSPACE (Only 1 order expanded at a time so other orders don't clutter the view) */}
+                    {selectedOrd ? (
+                      renderSingleOrderWorkspace(selectedOrd)
+                    ) : tabOrders.length === 0 ? (
+                      <p className="text-xs text-slate-500 py-8 text-center">
+                        {isCompleteOrdersTab
+                          ? 'No orders in Complete Order list yet. Once an order reaches Stage 4 (Ready for Delivery), it moves here automatically.'
+                          : 'No active or pending orders in the pipeline right now.'}
+                      </p>
+                    ) : (
+                      /* COMPACT PAGE-STYLE ORDER LIST (Click any order to open its single-order workspace & chat, or click Edit in Complete Order to send a new download link) */
+                      <div className="space-y-3">
+                        {tabOrders.map((ord) => {
+                          const isPendingApproval =
+                            orderApprovalMap[ord.orderNumber] === 'pending' ||
+                            (orderApprovalMap[ord.orderNumber] !== 'approved' &&
+                              ord.progressPercent === 0);
+                          const ordInvoiceStatus = getOrderInvoiceStatus(ord);
+                          const activeStageObj = PIPELINE_STAGES.find(
+                            (s) => s.status === ord.status
+                          );
+                          const ordMessages = messagesByOrderId[ord.id] || [];
+                          const isEditingLink =
+                            editingCompletedLinkOrderId === ord.id;
+
+                          return (
+                            <div
+                              key={ord.id}
+                              className={`p-4 rounded-xl border transition-all ${
+                                ord.reopenedByChat
+                                  ? 'bg-amber-50/70 border-amber-400 shadow-xs'
+                                  : 'bg-[#F8FAFC] hover:bg-white border-slate-200 hover:border-[#0088FF]'
+                              } space-y-3`}
+                            >
+                              <div className="flex flex-wrap items-start justify-between gap-4">
+                                {/* Left: Order Number + Client Name + Service Name + Uploaded File Download + Working Instruction */}
+                                <div
+                                  onClick={() => setSelectedAdminOrderId(ord.id)}
+                                  className="space-y-2 flex-1 min-w-[260px] cursor-pointer"
+                                >
+                                  <div className="flex flex-wrap items-center gap-2 text-xs font-mono-tabular">
+                                    <span className="font-bold text-[#001E5A] text-sm">
+                                      {ord.orderNumber}
+                                    </span>
+                                    <span>·</span>
+                                    <span className="font-bold text-[#0088FF]">
+                                      Client: {ord.clientName || 'Studio Client'}
+                                    </span>
+                                    <span>·</span>
+                                    <span className="font-semibold text-slate-700">
+                                      Service: {resolveOrderServiceName(ord)}
+                                    </span>
+                                    <span>·</span>
+                                    {isPendingApproval ? (
+                                      <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[11px]">
+                                        1. PENDING APPROVAL
+                                      </span>
+                                    ) : ord.clientCompleted && !ord.reopenedByChat ? (
+                                      <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[11px]">
+                                        5. COMPLETE ORDER ✓
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 rounded bg-blue-100 text-[#001E5A] font-bold text-[11px]">
+                                        {activeStageObj?.label.toUpperCase() ||
+                                          ord.status.toUpperCase()}{' '}
+                                        ({ord.progressPercent}%)
+                                      </span>
+                                    )}
+                                    {ord.reopenedByChat && (
+                                      <span className="px-2 py-0.5 rounded bg-amber-500 text-white font-bold text-[11px]">
+                                        💬 NEW CHAT REPLY (REOPENED)
+                                      </span>
+                                    )}
+                                    <span>·</span>
+                                    <span
+                                      className={
+                                        ordInvoiceStatus === 'paid'
+                                          ? 'text-emerald-700 font-bold'
+                                          : 'text-amber-700 font-bold'
+                                      }
+                                    >
+                                      Invoice ({ord.orderNumber}):{' '}
+                                      {ordInvoiceStatus.toUpperCase()}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs">
+                                    <span className="font-bold text-[#001E5A]">
+                                      {ord.projectTitle}
+                                    </span>
+                                    <span className="font-mono-tabular text-slate-600">
+                                      {ord.imageCount} frames · ${ord.totalPrice.toFixed(2)} USD
+                                    </span>
+                                    <span className="text-slate-600">
+                                      <strong className="text-[#001E5A]">
+                                        Working Instruction:
+                                      </strong>{' '}
+                                      {ord.instructions || 'Standard studio SOP.'}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex flex-wrap items-center gap-3 pt-0.5 text-xs">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="font-bold text-[#001E5A] text-[11px]">
+                                        Client Uploaded File:
+                                      </span>
+                                      {renderOrderClientFilesDownload(ord)}
+                                    </div>
+
+                                    {ord.deliveryDownloadUrl && (
+                                      <div className="flex items-center gap-1.5 font-mono-tabular text-[11px] text-emerald-800">
+                                        <span className="font-bold">
+                                          Delivery Link:
+                                        </span>
+                                        <a
+                                          href={
+                                            ord.deliveryDownloadUrl.startsWith('http')
+                                              ? ord.deliveryDownloadUrl
+                                              : `https://${ord.deliveryDownloadUrl}`
+                                          }
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="underline font-bold text-[#0088FF] max-w-[220px] truncate"
+                                        >
+                                          {ord.deliveryDownloadUrl}
+                                        </a>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Right: Quick Actions (Approve / Edit Download Link / Open Order & Chat / Delete) */}
+                                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                                  {!isCompleteOrdersTab &&
+                                    (isPendingApproval ? (
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          await onApproveOrder(ord);
+                                          notifySaved(
+                                            `Order ${ord.orderNumber} APPROVED and moved to 1. Order Status: Received!`
+                                          );
+                                        }}
+                                        className="px-3.5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors flex items-center gap-1.5"
+                                      >
+                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                        <span>Approve Order ✓</span>
+                                      </button>
+                                    ) : (
+                                      <span className="px-3 py-2 text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 rounded-lg flex items-center gap-1 select-none">
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                        <span>Approved ✓</span>
+                                      </span>
+                                    ))}
+
+                                  {isCompleteOrdersTab && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (isEditingLink) {
+                                          setEditingCompletedLinkOrderId(null);
+                                        } else {
+                                          setEditingCompletedLinkOrderId(ord.id);
+                                          setCompletedLinkDraft(
+                                            ord.deliveryDownloadUrl || ''
+                                          );
+                                        }
+                                      }}
+                                      className="px-3 py-2 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5"
+                                      title="Edit & Send New Download Link to Client"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5 text-[#0088FF]" />
+                                      <span>Edit Link</span>
+                                    </button>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedAdminOrderId(ord.id)}
+                                    className="px-3.5 py-2 rounded-lg bg-[#001E5A] hover:bg-[#0088FF] text-white text-xs font-bold transition-colors flex items-center gap-1.5"
+                                  >
+                                    <MessageSquare className="w-3.5 h-3.5" />
+                                    <span>
+                                      Open Order & Chat ({ordMessages.length}) →
+                                    </span>
+                                  </button>
+
+                                  {onDeleteOrder && (
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        await onDeleteOrder(ord);
+                                        notifySaved(
+                                          `Deleted Order ${ord.orderNumber}.`
+                                        );
+                                      }}
+                                      className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-colors"
+                                      title="Delete Order"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Inline Edit Download Link Box in Complete Order List (Updates Client Portal + Sends "Got New Download Link" Notification & Email) */}
+                              {isEditingLink && (
+                                <div className="pt-3 border-t border-blue-200 bg-white p-3.5 rounded-xl flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                                  <div className="flex-1 space-y-1">
+                                    <label className="block text-[11px] font-bold text-[#001E5A]">
+                                      Send New / Updated Download Link for {ord.orderNumber} ({ord.clientName}) — Updates Client Account & Sends Email + Notification
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={completedLinkDraft}
+                                      onChange={(e) =>
+                                        setCompletedLinkDraft(e.target.value)
+                                      }
+                                      placeholder="https://drive.google.com/drive/folders/... or https://wetransfer.com/..."
+                                      className="w-full px-3 py-2 text-xs font-mono-tabular bg-[#F8FAFC] border border-slate-300 rounded-lg focus:outline-none focus:border-[#0088FF]"
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setEditingCompletedLinkOrderId(null)
+                                      }
+                                      className="px-3 py-2 rounded-lg border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                                    >
+                                      Cancel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        const cleanUrl =
+                                          completedLinkDraft.trim();
+                                        if (!cleanUrl) return;
+                                        if (onUpdateOrderInvoiceDetails) {
+                                          await onUpdateOrderInvoiceDetails(
+                                            ord.id,
+                                            {
+                                              deliveryDownloadUrl: cleanUrl,
+                                            }
+                                          );
+                                        }
+                                        await onSetOrderStage(
+                                          ord,
+                                          'completed',
+                                          cleanUrl
+                                        );
+                                        setEditingCompletedLinkOrderId(null);
+                                        notifySaved(
+                                          `Sent NEW download link for Order ${ord.orderNumber}! Client account updated, "Got New Download Link" notification sent, and email dispatched to ${
+                                            ord.clientEmail || ord.clientName
+                                          }.`
+                                        );
+                                      }}
+                                      className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors flex items-center gap-1.5"
+                                    >
+                                      <Send className="w-3.5 h-3.5" />
+                                      <span>
+                                        Send New Download Link & Email →
+                                      </span>
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              );
+            })()}
+
+          {/* ===================================================================
+              MODULE 2: INVOICES (CLIENT DIRECTORY LIST + SEPARATE UNPAID & PAID LISTS)
+             =================================================================== */}
+          {activeTab === 'invoices_billing' &&
+            (() => {
+              // Group orders by Client (email or clientName)
+              const clientGroupsMap: Record<
+                string,
+                {
+                  key: string;
+                  clientName: string;
+                  companyName: string;
+                  clientEmail: string;
+                  clientPhone: string;
+                  clientAddress: string;
+                  orders: OrderDoc[];
+                  unpaidOrders: OrderDoc[];
+                  paidOrders: OrderDoc[];
+                  totalAmount: number;
+                  unpaidAmount: number;
+                  paidAmount: number;
+                }
+              > = {};
+
+              orders.forEach((ord) => {
+                const key = (
+                  ord.clientEmail?.trim().toLowerCase() ||
+                  ord.clientName?.trim().toLowerCase() ||
+                  'studio_client'
+                );
+                if (!clientGroupsMap[key]) {
+                  clientGroupsMap[key] = {
+                    key,
+                    clientName: ord.clientName || 'Studio Client',
+                    companyName: ord.companyName || '',
+                    clientEmail: ord.clientEmail || '',
+                    clientPhone: ord.clientPhone || '',
+                    clientAddress: ord.clientAddress || '',
+                    orders: [],
+                    unpaidOrders: [],
+                    paidOrders: [],
+                    totalAmount: 0,
+                    unpaidAmount: 0,
+                    paidAmount: 0,
+                  };
+                }
+                const grp = clientGroupsMap[key];
+                if (!grp.companyName && ord.companyName) {
+                  grp.companyName = ord.companyName;
+                }
+                if (!grp.clientPhone && ord.clientPhone) {
+                  grp.clientPhone = ord.clientPhone;
+                }
+                if (!grp.clientAddress && ord.clientAddress) {
+                  grp.clientAddress = ord.clientAddress;
+                }
+                grp.orders.push(ord);
+                grp.totalAmount += ord.totalPrice || 0;
+                const st = getOrderInvoiceStatus(ord);
+                if (st === 'paid') {
+                  grp.paidOrders.push(ord);
+                  grp.paidAmount += ord.totalPrice || 0;
+                } else {
+                  grp.unpaidOrders.push(ord);
+                  grp.unpaidAmount += ord.totalPrice || 0;
+                }
+              });
+
+              const clientGroupsList = Object.values(clientGroupsMap);
+              const selectedClientGroup = selectedInvoiceClientKey
+                ? clientGroupsMap[selectedInvoiceClientKey] || null
+                : null;
+
+              const scopedOrders = selectedClientGroup
+                ? selectedClientGroup.orders
+                : orders;
+              const unpaidOrdersList = scopedOrders.filter(
+                (ord) => getOrderInvoiceStatus(ord) === 'pending'
+              );
+              const paidOrdersList = scopedOrders.filter(
+                (ord) => getOrderInvoiceStatus(ord) === 'paid'
+              );
+
+              const renderInvoiceCard = (ord: OrderDoc) => {
+                const invNo = ord.orderNumber;
+                const ordInvoiceStatus = getOrderInvoiceStatus(ord);
+                const ordPaymentTerms: InvoicePaymentTerms =
+                  ord.paymentTerms ||
+                  invoicePaymentInfo.defaultPaymentTerms ||
+                  'Project';
+                const ordPaymentOption: InvoicePaymentOption =
+                  ord.paymentOption ||
+                  invoicePaymentInfo.defaultPaymentOption ||
+                  'PayPal';
+                const isEditingThisInvoice =
+                  editingOrderInvoiceDraft?.orderId === ord.id;
+
+                return (
+                  <div
+                    key={ord.id}
+                    className={`p-4 rounded-xl border transition-all ${
+                      isEditingThisInvoice
+                        ? 'bg-blue-50/40 border-[#0088FF] shadow-xs space-y-4'
+                        : ordInvoiceStatus === 'paid'
+                        ? 'bg-emerald-50/30 border-emerald-200 space-y-2.5'
+                        : 'bg-amber-50/30 border-amber-200 space-y-2.5'
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2 text-xs font-mono-tabular">
+                          <span className="font-bold text-[#001E5A] text-sm">
+                            INVOICE: {invNo}
+                          </span>
+                          <span>·</span>
+                          <span className="text-slate-600 font-semibold">
+                            Client: {ord.clientName || 'Studio Client'}
+                            {ord.companyName ? ` (${ord.companyName})` : ''}
+                          </span>
+                          <span>·</span>
+                          <span className="px-2 py-0.5 rounded bg-blue-50 text-[#001E5A] border border-blue-200 font-bold text-[11px]">
+                            Terms: {ordPaymentTerms}
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-blue-50 text-[#0088FF] border border-blue-200 font-bold text-[11px]">
+                            Option: {ordPaymentOption}
+                          </span>
+                          <span>·</span>
+                          {ordInvoiceStatus === 'paid' ? (
+                            <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[11px]">
+                              PAID & CONFIRMED ✓
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[11px]">
+                              UNPAID / DUE
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                          <span className="font-bold text-[#001E5A]">
+                            {ord.projectTitle}
+                          </span>
+                          <span className="font-mono-tabular text-slate-600">
+                            Qty: <strong>{ord.imageCount}</strong> frames
+                          </span>
+                          <span className="font-mono-tabular font-bold text-[#0088FF]">
+                            Total: ${ord.totalPrice.toFixed(2)} USD
+                          </span>
+                          <span className="text-slate-600">
+                            BILL TO:{' '}
+                            <strong>
+                              {[
+                                ord.companyName,
+                                ord.clientName,
+                                ord.clientEmail,
+                                ord.clientPhone,
+                              ]
+                                .filter(Boolean)
+                                .join(' · ') || 'Client Account'}
+                            </strong>
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        {ordInvoiceStatus === 'pending' ? (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await onUpdateInvoiceStatus(
+                                invNo,
+                                'paid',
+                                ord.orderNumber
+                              );
+                              notifySaved(
+                                `Invoice ${invNo} permanently marked as PAID ✓!`
+                              );
+                            }}
+                            className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-[#0088FF] hover:bg-[#001E5A] text-white transition-colors flex items-center gap-1.5"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Mark Invoice PAID ✓</span>
+                          </button>
+                        ) : (
+                          <span
+                            title="Invoice is marked PAID (cannot revert to Pending)"
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1.5 select-none"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Invoice PAID ✓</span>
+                          </span>
+                        )}
+
+                        {!isEditingThisInvoice ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingOrderInvoiceDraft({
+                                orderId: ord.id,
+                                paymentTerms: ordPaymentTerms,
+                                paymentOption: ordPaymentOption,
+                                projectTitle: ord.projectTitle || '',
+                                imageCount: ord.imageCount || 1,
+                                totalPrice: ord.totalPrice || 0,
+                                companyName: ord.companyName || '',
+                                clientName: ord.clientName || '',
+                                clientAddress: ord.clientAddress || '',
+                                clientPhone: ord.clientPhone || '',
+                                clientWebsite: ord.clientWebsite || '',
+                                clientEmail: ord.clientEmail || '',
+                              })
+                            }
+                            className="px-3 py-1.5 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5"
+                          >
+                            <Pencil className="w-3.5 h-3.5 text-[#0088FF]" />
+                            <span>Edit</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setEditingOrderInvoiceDraft(null)}
+                            className="px-3 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold transition-colors flex items-center gap-1"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            <span>Cancel</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {isEditingThisInvoice && editingOrderInvoiceDraft && (
+                      <div className="pt-3 border-t border-blue-200 space-y-3.5 bg-white p-4 rounded-xl">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+                          <div>
+                            <label className="block text-[11px] font-bold text-[#001E5A] mb-1">
+                              Payment Terms
+                            </label>
+                            <select
+                              value={editingOrderInvoiceDraft.paymentTerms}
+                              onChange={(e) =>
+                                setEditingOrderInvoiceDraft({
+                                  ...editingOrderInvoiceDraft,
+                                  paymentTerms: e.target
+                                    .value as InvoicePaymentTerms,
+                                })
+                              }
+                              className="w-full px-2.5 py-1.5 text-xs font-bold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
+                            >
+                              <option value="Project">Project</option>
+                              <option value="Monthly">Monthly</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-[#0088FF] mb-1">
+                              Payment Option
+                            </label>
+                            <select
+                              value={editingOrderInvoiceDraft.paymentOption}
+                              onChange={(e) =>
+                                setEditingOrderInvoiceDraft({
+                                  ...editingOrderInvoiceDraft,
+                                  paymentOption: e.target
+                                    .value as InvoicePaymentOption,
+                                })
+                              }
+                              className="w-full px-2.5 py-1.5 text-xs font-bold text-[#0088FF] bg-white border border-slate-300 rounded-lg"
+                            >
+                              <option value="PayPal">
+                                PayPal (
+                                {invoicePaymentInfo.paypalEmail ||
+                                  'hello@clippasia.com'}
+                                )
+                              </option>
+                              <option value="Bank">
+                                Bank (
+                                {invoicePaymentInfo.bankName ||
+                                  'Dutch Bangla Bank PLC'}
+                                )
+                              </option>
+                            </select>
+                          </div>
+
+                          <div className="lg:col-span-2">
+                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                              Invoice Project / Service Description
+                            </label>
+                            <input
+                              type="text"
+                              value={editingOrderInvoiceDraft.projectTitle}
+                              onChange={(e) =>
+                                setEditingOrderInvoiceDraft({
+                                  ...editingOrderInvoiceDraft,
+                                  projectTitle: e.target.value,
+                                })
+                              }
+                              className="w-full px-2.5 py-1.5 text-xs font-semibold text-[#001E5A] bg-white border border-slate-300 rounded-lg"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                              Quantity (Frames)
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={editingOrderInvoiceDraft.imageCount}
+                              onChange={(e) =>
+                                setEditingOrderInvoiceDraft({
+                                  ...editingOrderInvoiceDraft,
+                                  imageCount: Number(e.target.value),
+                                })
+                              }
+                              className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                              Invoice Total Amount ($ USD)
+                            </label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min={0}
+                              value={editingOrderInvoiceDraft.totalPrice}
+                              onChange={(e) =>
+                                setEditingOrderInvoiceDraft({
+                                  ...editingOrderInvoiceDraft,
+                                  totalPrice: Number(e.target.value),
+                                })
+                              }
+                              className="w-full px-2.5 py-1.5 text-xs font-mono-tabular font-bold text-[#0088FF] bg-white border border-slate-300 rounded-lg"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5 pt-2 border-t border-slate-200">
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                              BILL TO · Company Name
+                            </label>
+                            <input
+                              type="text"
+                              value={editingOrderInvoiceDraft.companyName}
+                              onChange={(e) =>
+                                setEditingOrderInvoiceDraft({
+                                  ...editingOrderInvoiceDraft,
+                                  companyName: e.target.value,
+                                })
+                              }
+                              placeholder="(Blank = hidden)"
+                              className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                              BILL TO · Contact Person
+                            </label>
+                            <input
+                              type="text"
+                              value={editingOrderInvoiceDraft.clientName}
+                              onChange={(e) =>
+                                setEditingOrderInvoiceDraft({
+                                  ...editingOrderInvoiceDraft,
+                                  clientName: e.target.value,
+                                })
+                              }
+                              placeholder="(Blank = hidden)"
+                              className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                              BILL TO · Address
+                            </label>
+                            <input
+                              type="text"
+                              value={editingOrderInvoiceDraft.clientAddress}
+                              onChange={(e) =>
+                                setEditingOrderInvoiceDraft({
+                                  ...editingOrderInvoiceDraft,
+                                  clientAddress: e.target.value,
+                                })
+                              }
+                              placeholder="(Blank = hidden)"
+                              className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                              BILL TO · Phone No.
+                            </label>
+                            <input
+                              type="text"
+                              value={editingOrderInvoiceDraft.clientPhone}
+                              onChange={(e) =>
+                                setEditingOrderInvoiceDraft({
+                                  ...editingOrderInvoiceDraft,
+                                  clientPhone: e.target.value,
+                                })
+                              }
+                              placeholder="(Blank = hidden)"
+                              className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                              BILL TO · Website
+                            </label>
+                            <input
+                              type="text"
+                              value={editingOrderInvoiceDraft.clientWebsite}
+                              onChange={(e) =>
+                                setEditingOrderInvoiceDraft({
+                                  ...editingOrderInvoiceDraft,
+                                  clientWebsite: e.target.value,
+                                })
+                              }
+                              placeholder="(Blank = hidden)"
+                              className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-semibold text-slate-500 mb-1">
+                              BILL TO · Email
+                            </label>
+                            <input
+                              type="text"
+                              value={editingOrderInvoiceDraft.clientEmail}
+                              onChange={(e) =>
+                                setEditingOrderInvoiceDraft({
+                                  ...editingOrderInvoiceDraft,
+                                  clientEmail: e.target.value,
+                                })
+                              }
+                              placeholder="(Blank = hidden)"
+                              className="w-full px-2.5 py-1.5 text-xs font-mono-tabular bg-white border border-slate-300 rounded-lg"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditingOrderInvoiceDraft(null)}
+                            className="px-4 py-2 rounded-lg border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (onUpdateOrderInvoiceDetails) {
+                                await onUpdateOrderInvoiceDetails(ord.id, {
+                                  paymentTerms:
+                                    editingOrderInvoiceDraft.paymentTerms,
+                                  paymentOption:
+                                    editingOrderInvoiceDraft.paymentOption,
+                                  projectTitle:
+                                    editingOrderInvoiceDraft.projectTitle,
+                                  imageCount:
+                                    editingOrderInvoiceDraft.imageCount,
+                                  totalPrice:
+                                    editingOrderInvoiceDraft.totalPrice,
+                                  companyName:
+                                    editingOrderInvoiceDraft.companyName,
+                                  clientName:
+                                    editingOrderInvoiceDraft.clientName,
+                                  clientAddress:
+                                    editingOrderInvoiceDraft.clientAddress,
+                                  clientPhone:
+                                    editingOrderInvoiceDraft.clientPhone,
+                                  clientWebsite:
+                                    editingOrderInvoiceDraft.clientWebsite,
+                                  clientEmail:
+                                    editingOrderInvoiceDraft.clientEmail,
+                                });
+                              }
+                              setEditingOrderInvoiceDraft(null);
+                              notifySaved(
+                                `Saved & updated invoice ${invNo} details!`
+                              );
+                            }}
+                            className="px-5 py-2 rounded-lg bg-[#001E5A] hover:bg-[#0088FF] text-white text-xs font-bold transition-colors flex items-center gap-1.5"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>Save & Update Invoice</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              };
+
+              return (
+                <div className="space-y-8">
+                  {/* SECTION A1: CLIENT BILLING DIRECTORY LIST (Click any client to inspect their Total, Unpaid/Due, and Paid invoices) */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+                      <div>
+                        <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
+                          CLIENT BILLING ACCOUNTS & INVOICE DIRECTORY ({clientGroupsList.length} CLIENTS · {orders.length} TOTAL INVOICES)
+                        </p>
+                        <h2 className="text-lg font-bold text-[#001E5A]">
+                          {selectedClientGroup
+                            ? `Client Account: ${selectedClientGroup.clientName}${
+                                selectedClientGroup.companyName
+                                  ? ` · ${selectedClientGroup.companyName}`
+                                  : ''
+                              } (${selectedClientGroup.orders.length} Total Invoices)`
+                            : 'Client Billing List — Click Any Client to View Their Total, Unpaid (Due) & Paid Invoices'}
+                        </h2>
+                      </div>
+
+                      {selectedClientGroup && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedInvoiceClientKey(null)}
+                          className="px-4 py-2 rounded-lg bg-[#001E5A] hover:bg-[#0088FF] text-white text-xs font-bold transition-colors"
+                        >
+                          ← Back to All Clients List ({clientGroupsList.length})
+                        </button>
+                      )}
+                    </div>
+
+                    {!selectedClientGroup ? (
+                      clientGroupsList.length === 0 ? (
+                        <p className="text-xs text-slate-500 text-center py-6">
+                          No client invoices generated yet.
+                        </p>
+                      ) : (
+                        <div className="space-y-2.5">
+                          {clientGroupsList.map((grp) => (
+                            <div
+                              key={grp.key}
+                              onClick={() => setSelectedInvoiceClientKey(grp.key)}
+                              className="p-4 rounded-xl bg-[#F8FAFC] hover:bg-[#EAF3FC]/60 border border-slate-200 hover:border-[#0088FF] cursor-pointer transition-all flex flex-wrap items-center justify-between gap-4"
+                            >
+                              <div className="space-y-1">
+                                <div className="flex flex-wrap items-center gap-2 text-xs">
+                                  <span className="font-bold text-[#001E5A] text-sm flex items-center gap-1.5">
+                                    <User className="w-4 h-4 text-[#0088FF]" />
+                                    <span>{grp.clientName}</span>
+                                  </span>
+                                  {grp.companyName && (
+                                    <>
+                                      <span>·</span>
+                                      <span className="font-semibold text-[#0088FF]">
+                                        Company: {grp.companyName}
+                                      </span>
+                                    </>
+                                  )}
+                                  {grp.clientEmail && (
+                                    <>
+                                      <span>·</span>
+                                      <span className="font-mono-tabular text-slate-600">
+                                        {grp.clientEmail}
+                                      </span>
+                                    </>
+                                  )}
+                                  {grp.clientPhone && (
+                                    <>
+                                      <span>·</span>
+                                      <span className="font-mono-tabular text-slate-600">
+                                        {grp.clientPhone}
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-3 text-xs font-mono-tabular">
+                                  <span className="text-slate-700">
+                                    Total Invoices: <strong>{grp.orders.length}</strong> (${grp.totalAmount.toFixed(2)} USD)
+                                  </span>
+                                  <span>·</span>
+                                  <span className="text-amber-700 font-bold">
+                                    Unpaid / Due: {grp.unpaidOrders.length} (${grp.unpaidAmount.toFixed(2)} USD)
+                                  </span>
+                                  <span>·</span>
+                                  <span className="text-emerald-700 font-bold">
+                                    Paid: {grp.paidOrders.length} (${grp.paidAmount.toFixed(2)} USD)
+                                  </span>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedInvoiceClientKey(grp.key);
+                                }}
+                                className="px-4 py-2 rounded-lg bg-[#001E5A] hover:bg-[#0088FF] text-white text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0"
+                              >
+                                <span>View Client Invoices ({grp.orders.length})</span>
+                                <ArrowRight className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    ) : (
+                      /* Selected Client Summary KPI Bar */
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 p-4 rounded-xl bg-[#F8FAFC] border border-blue-200 text-xs">
+                        <div>
+                          <span className="text-[10px] font-mono-tabular uppercase text-slate-500 font-bold">
+                            Client & Company
+                          </span>
+                          <p className="font-bold text-[#001E5A] text-sm mt-0.5">
+                            {selectedClientGroup.clientName}
+                          </p>
+                          <p className="text-slate-600">
+                            {selectedClientGroup.companyName || 'Individual Studio Account'}
+                          </p>
+                          <p className="font-mono-tabular text-[11px] text-slate-500">
+                            {selectedClientGroup.clientEmail}{' '}
+                            {selectedClientGroup.clientPhone
+                              ? `· ${selectedClientGroup.clientPhone}`
+                              : ''}
+                          </p>
+                        </div>
+
+                        <div>
+                          <span className="text-[10px] font-mono-tabular uppercase text-slate-500 font-bold">
+                            Total Invoices
+                          </span>
+                          <p className="text-xl font-bold font-mono-tabular text-[#001E5A] mt-0.5">
+                            {selectedClientGroup.orders.length} Invoices
+                          </p>
+                          <p className="font-mono-tabular text-slate-600">
+                            Total Volume: ${selectedClientGroup.totalAmount.toFixed(2)} USD
+                          </p>
+                        </div>
+
+                        <div>
+                          <span className="text-[10px] font-mono-tabular uppercase text-amber-700 font-bold">
+                            Unpaid / Due Balance
+                          </span>
+                          <p className="text-xl font-bold font-mono-tabular text-amber-700 mt-0.5">
+                            ${selectedClientGroup.unpaidAmount.toFixed(2)} USD
+                          </p>
+                          <p className="font-mono-tabular text-amber-800">
+                            {selectedClientGroup.unpaidOrders.length} Unpaid Invoice(s)
+                          </p>
+                        </div>
+
+                        <div>
+                          <span className="text-[10px] font-mono-tabular uppercase text-emerald-700 font-bold">
+                            Paid & Settled
+                          </span>
+                          <p className="text-xl font-bold font-mono-tabular text-emerald-700 mt-0.5">
+                            ${selectedClientGroup.paidAmount.toFixed(2)} USD
+                          </p>
+                          <p className="font-mono-tabular text-emerald-800">
+                            {selectedClientGroup.paidOrders.length} Paid Invoice(s)
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SECTION A2: SEPARATE UNPAID / DUE INVOICES LIST (TOP) */}
+                  <div className="bg-white border-2 border-amber-300 rounded-2xl p-6 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 pb-3">
+                      <div>
+                        <p className="text-xs font-mono-tabular font-bold text-amber-700">
+                          1. UNPAID / DUE INVOICES LIST ({unpaidOrdersList.length} UNPAID)
+                        </p>
+                        <h3 className="text-base font-bold text-[#001E5A]">
+                          Unpaid / Pending Invoices {selectedClientGroup ? `for ${selectedClientGroup.clientName}` : '(All Clients)'}
+                        </h3>
+                      </div>
+                      <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-900 font-mono-tabular text-xs font-bold">
+                        Total Due: $
+                        {unpaidOrdersList
+                          .reduce((s, o) => s + (o.totalPrice || 0), 0)
+                          .toFixed(2)}{' '}
+                        USD
+                      </span>
+                    </div>
+
+                    {unpaidOrdersList.length === 0 ? (
+                      <p className="text-xs text-slate-500 py-4 text-center">
+                        No unpaid / due invoices{selectedClientGroup ? ` for ${selectedClientGroup.clientName}` : ''}. All invoices are paid!
+                      </p>
+                    ) : (
+                      <div className="space-y-3">
+                        {unpaidOrdersList.map((ord) => renderInvoiceCard(ord))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SECTION A3: SEPARATE PAID INVOICES LIST (BOTTOM) */}
+                  <div className="bg-white border-2 border-emerald-300 rounded-2xl p-6 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200 pb-3">
+                      <div>
+                        <p className="text-xs font-mono-tabular font-bold text-emerald-700">
+                          2. PAID INVOICES LIST ({paidOrdersList.length} PAID ✓)
+                        </p>
+                        <h3 className="text-base font-bold text-[#001E5A]">
+                          Paid & Settled Invoices {selectedClientGroup ? `for ${selectedClientGroup.clientName}` : '(All Clients)'}
+                        </h3>
+                      </div>
+                      <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-900 font-mono-tabular text-xs font-bold">
+                        Total Paid: $
+                        {paidOrdersList
+                          .reduce((s, o) => s + (o.totalPrice || 0), 0)
+                          .toFixed(2)}{' '}
+                        USD
+                      </span>
+                    </div>
+
+                    {paidOrdersList.length === 0 ? (
+                      <p className="text-xs text-slate-500 py-4 text-center">
+                        No paid invoices yet{selectedClientGroup ? ` for ${selectedClientGroup.clientName}` : ''}.
+                      </p>
+                    ) : (
+                      <div className="space-y-3">
+                        {paidOrdersList.map((ord) => renderInvoiceCard(ord))}
+                      </div>
+                    )}
+                  </div>
 
               {/* SECTION B: BILL FROM, PAYMENT TERMS / OPTION, PAYPAL & BANK DETAILS (READ-ONLY SUMMARY BY DEFAULT, EDIT ON CLICK) */}
               <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5">
@@ -4004,10 +4988,11 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                 )}
               </div>
             </div>
-          )}
+              );
+            })()}
 
           {/* ===================================================================
-              MODULE 3: CLIENT QUERIES & PUBLIC TRIAL INQUIRIES (WITH EMAIL LOGS)
+              MODULE 3: CLIENT QUERIES & PUBLIC TRIAL INQUIRIES (WITH DOWNLOAD LINKS & AUTO-SEEN NEW HIGHLIGHT)
              =================================================================== */}
           {activeTab === 'client_queries' && (
             <div className="space-y-6">
@@ -4015,224 +5000,301 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                 <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
                   <div>
                     <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
-                      PUBLIC & CLIENT QUERIES · CONFIRMATION & ADMIN EMAIL LOGS
+                      CLIENT QUERIES, FREE TRIAL REQUESTS & CUSTOM QUOTE INQUIRIES
                     </p>
                     <h2 className="text-lg font-bold text-[#001E5A]">
-                      Client Queries, Free Trial Requests & Custom Quote Inquiries ({clientQueries.length})
+                      Client Queries, Free Trial Leads & Custom Quotes ({clientQueries.length})
                     </h2>
                     <p className="text-xs text-slate-600 mt-0.5">
-                      Every query submitted on the website (with or without an account) is stored here. Client confirmation emails and Admin alert emails are automatically dispatched.
+                      New unread queries are highlighted in amber. Once viewed or clicked, they are automatically marked as seen.
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
-                    {(['all', 'new', 'contacted', 'resolved'] as const).map(
-                      (st) => (
-                        <button
-                          key={st}
-                          type="button"
-                          onClick={() => setQueryStatusFilter(st)}
-                          className={`px-3 py-1.5 text-xs font-bold rounded-md transition-colors capitalize ${
-                            queryStatusFilter === st
-                              ? 'bg-[#001E5A] text-white'
-                              : 'text-[#001E5A] hover:bg-white'
-                          }`}
-                        >
-                          {st}
-                        </button>
-                      )
-                    )}
-                  </div>
+                  {newQueriesCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onUpdateClientQueries(
+                          clientQueries.map((q) =>
+                            q.status === 'new' ? { ...q, status: 'contacted' } : q
+                          )
+                        );
+                        notifySaved('Marked all new queries as seen.');
+                      }}
+                      className="px-3.5 py-1.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-xs font-bold transition-colors"
+                    >
+                      Mark All {newQueriesCount} New as Seen ✓
+                    </button>
+                  )}
                 </div>
 
-                {clientQueries.filter((q) =>
-                  queryStatusFilter === 'all'
-                    ? true
-                    : q.status === queryStatusFilter
-                ).length === 0 ? (
+                {clientQueries.length === 0 ? (
                   <p className="text-xs text-slate-500 text-center py-8">
-                    No queries matching filter "{queryStatusFilter}".
+                    No client queries submitted yet.
                   </p>
                 ) : (
                   <div className="space-y-4">
-                    {clientQueries
-                      .filter((q) =>
-                        queryStatusFilter === 'all'
-                          ? true
-                          : q.status === queryStatusFilter
-                      )
-                      .map((qry) => {
-                        const isExpanded = expandedEmailQueryId === qry.id;
-                        return (
-                          <div
-                            key={qry.id}
-                            className="p-5 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-3.5"
-                          >
-                            <div className="flex flex-wrap items-start justify-between gap-4">
-                              <div className="space-y-1">
-                                <div className="flex flex-wrap items-center gap-2 text-xs font-mono-tabular">
-                                  <span className="font-bold text-[#0088FF]">
-                                    {qry.queryNumber}
-                                  </span>
-                                  <span>·</span>
-                                  <span className="text-slate-500">
-                                    {new Date(qry.createdAt).toLocaleString()}
-                                  </span>
-                                  <span>·</span>
-                                  {qry.isLoggedInClient ? (
-                                    <span className="text-blue-700 font-bold">
-                                      LOGGED-IN CLIENT (ROUTED TO PORTAL)
-                                    </span>
-                                  ) : (
-                                    <span className="text-slate-700 font-bold">
-                                      PUBLIC VISITOR (NO ACCOUNT · ADMIN & EMAIL ONLY)
-                                    </span>
-                                  )}
-                                  <span>·</span>
-                                  <span className="font-bold uppercase text-[#001E5A]">
-                                    STATUS: {qry.status}
-                                  </span>
-                                </div>
+                    {clientQueries.map((qry) => {
+                      const isExpanded = expandedEmailQueryId === qry.id;
+                      const isNewQuery = qry.status === 'new';
 
-                                <h3 className="text-sm font-bold text-[#001E5A]">
-                                  {qry.clientName} —{' '}
-                                  <span className="text-[#0088FF]">
-                                    {qry.serviceTitle}
-                                  </span>
-                                </h3>
+                      return (
+                        <div
+                          key={qry.id}
+                          onClick={() => {
+                            if (isNewQuery) {
+                              onUpdateClientQueries(
+                                clientQueries.map((item) =>
+                                  item.id === qry.id
+                                    ? { ...item, status: 'contacted' }
+                                    : item
+                                )
+                              );
+                            }
+                          }}
+                          className={`p-5 rounded-xl border transition-all space-y-3.5 ${
+                            isNewQuery
+                              ? 'bg-amber-50/90 border-2 border-amber-400 shadow-sm cursor-pointer'
+                              : 'bg-[#F8FAFC] border-slate-200'
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div className="space-y-1.5 flex-1 min-w-[260px]">
+                              <div className="flex flex-wrap items-center gap-2 text-xs font-mono-tabular">
+                                <span className="font-bold text-[#001E5A] text-sm">
+                                  {qry.queryNumber.replace(/^FPS-QRY-/i, 'FX-')}
+                                </span>
+                                <span>·</span>
+                                <span className="text-slate-500">
+                                  {new Date(qry.createdAt).toLocaleString()}
+                                </span>
+                                {isNewQuery && (
+                                  <>
+                                    <span>·</span>
+                                    <span className="px-2.5 py-0.5 rounded-full bg-amber-500 text-white font-bold text-[10px] uppercase tracking-wider">
+                                      ● NEW UNREAD QUERY
+                                    </span>
+                                  </>
+                                )}
+                              </div>
 
-                                <div className="flex flex-wrap items-center gap-4 text-xs font-mono-tabular text-slate-700">
-                                  <span>
-                                    <strong>Client Email:</strong>{' '}
-                                    {qry.clientEmail}
-                                  </span>
+                              <h3 className="text-sm font-bold text-[#001E5A]">
+                                {qry.clientName} —{' '}
+                                <span className="text-[#0088FF]">
+                                  {qry.serviceTitle}
+                                </span>
+                              </h3>
+
+                              <div className="flex flex-wrap items-center gap-4 text-xs font-mono-tabular text-slate-700">
+                                <span>
+                                  <strong>Client Email:</strong> {qry.clientEmail}
+                                </span>
+                                {qry.clientPhone && (
                                   <span>
                                     <strong>Phone / WhatsApp:</strong>{' '}
                                     {qry.clientPhone}
                                   </span>
-                                  {qry.companyName && (
-                                    <span>
-                                      <strong>Company:</strong>{' '}
-                                      {qry.companyName}
-                                    </span>
-                                  )}
-                                </div>
-
-                                <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-slate-200 mt-2 leading-relaxed">
-                                  <strong className="text-[#001E5A]">
-                                    Client Instructions / Query Message:{' '}
-                                  </strong>
-                                  {qry.instructions}
-                                </p>
-
-                                <div className="flex flex-wrap items-center gap-4 pt-1 text-[11px] font-mono-tabular text-emerald-800">
-                                  <span className="inline-flex items-center gap-1">
-                                    <Mail className="w-3 h-3 text-emerald-600" />
-                                    ✓ Confirmation Mail Sent to {qry.clientEmail}
+                                )}
+                                {qry.companyName && (
+                                  <span>
+                                    <strong>Company:</strong> {qry.companyName}
                                   </span>
-                                  <span>·</span>
-                                  <span className="inline-flex items-center gap-1">
-                                    <Mail className="w-3 h-3 text-emerald-600" />
-                                    ✓ Admin Mail Sent to{' '}
-                                    {qry.adminEmailRecipient}
-                                  </span>
-                                </div>
+                                )}
                               </div>
 
-                              <div className="flex flex-wrap items-center gap-2">
-                                {(['new', 'contacted', 'resolved'] as const).map(
-                                  (st) => (
-                                    <button
-                                      key={st}
-                                      type="button"
-                                      onClick={() => {
-                                        const next = clientQueries.map((item) =>
-                                          item.id === qry.id
-                                            ? { ...item, status: st }
-                                            : item
-                                        );
-                                        onUpdateClientQueries(next);
-                                        notifySaved(
-                                          `Updated query ${qry.queryNumber} status to ${st.toUpperCase()}.`
-                                        );
-                                      }}
-                                      className={`px-2.5 py-1 rounded text-[11px] font-bold capitalize border transition-colors ${
-                                        qry.status === st
-                                          ? 'bg-[#001E5A] text-white border-[#001E5A]'
-                                          : 'bg-white text-[#001E5A] border-slate-300 hover:bg-[#EAF3FC]'
-                                      }`}
-                                    >
-                                      {st}
-                                    </button>
-                                  )
+                              {/* Uploaded Free Trial / Custom Quote Files Download Links */}
+                              <div className="pt-1 flex flex-wrap items-center gap-2 text-xs">
+                                <strong className="text-[#001E5A]">
+                                  Client Uploaded Files (Free Trial / Quote):
+                                </strong>
+                                {qry.clientSourceFilesUrl && (
+                                  <a
+                                    href={
+                                      qry.clientSourceFilesUrl.startsWith('http')
+                                        ? qry.clientSourceFilesUrl
+                                        : `https://${qry.clientSourceFilesUrl}`
+                                    }
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-50 hover:bg-[#0088FF] text-[#0088FF] hover:text-white border border-blue-200 text-[11px] font-bold transition-colors"
+                                  >
+                                    <Download className="w-3 h-3" />
+                                    <span>Download Client Source Link ↗</span>
+                                  </a>
                                 )}
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setExpandedEmailQueryId(
-                                      isExpanded ? null : qry.id
+                                {qry.sampleFilesData &&
+                                qry.sampleFilesData.length > 0 ? (
+                                  qry.sampleFilesData.map((fileItem, idx) =>
+                                    fileItem.dataUrl ? (
+                                      <a
+                                        key={`${fileItem.name}_${idx}`}
+                                        href={fileItem.dataUrl}
+                                        download={fileItem.name}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 hover:bg-emerald-600 text-emerald-800 hover:text-white border border-emerald-300 text-[11px] font-bold transition-colors"
+                                      >
+                                        <Download className="w-3 h-3" />
+                                        <span>Download {fileItem.name}</span>
+                                      </a>
+                                    ) : (
+                                      <a
+                                        key={`${fileItem.name}_${idx}`}
+                                        href={`data:text/plain;charset=utf-8,${encodeURIComponent(
+                                          `FixPhoto Studio Uploaded File Reference\nQuery: ${qry.queryNumber}\nClient: ${qry.clientName} (${qry.clientEmail})\nService: ${qry.serviceTitle}\nFile Name: ${fileItem.name}\nWorking Instruction: ${qry.instructions}`
+                                        )}`}
+                                        download={fileItem.name}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-50 hover:bg-[#0088FF] text-[#001E5A] hover:text-white border border-blue-200 text-[11px] font-semibold transition-colors"
+                                      >
+                                        <Download className="w-3 h-3" />
+                                        <span>Download {fileItem.name}</span>
+                                      </a>
                                     )
-                                  }
-                                  className="px-3 py-1 rounded text-[11px] font-bold text-[#0088FF] bg-white border border-slate-300 hover:bg-[#EAF3FC]"
-                                >
-                                  {isExpanded
-                                    ? 'Hide Sent Emails'
-                                    : 'View Sent Emails'}
-                                </button>
+                                  )
+                                ) : qry.sampleFiles && qry.sampleFiles.length > 0 ? (
+                                  qry.sampleFiles.map((fname, idx) => {
+                                    const isHttp =
+                                      fname.startsWith('http://') ||
+                                      fname.startsWith('https://');
+                                    return isHttp ? (
+                                      <a
+                                        key={`${fname}_${idx}`}
+                                        href={fname}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 hover:bg-emerald-600 text-emerald-800 hover:text-white border border-emerald-300 text-[11px] font-bold transition-colors"
+                                      >
+                                        <Download className="w-3 h-3" />
+                                        <span>Download File Link ↗</span>
+                                      </a>
+                                    ) : (
+                                      <a
+                                        key={`${fname}_${idx}`}
+                                        href={`data:text/plain;charset=utf-8,${encodeURIComponent(
+                                          `FixPhoto Studio Uploaded File Reference\nQuery: ${qry.queryNumber}\nClient: ${qry.clientName} (${qry.clientEmail})\nService: ${qry.serviceTitle}\nFile Name: ${fname}\nWorking Instruction: ${qry.instructions}`
+                                        )}`}
+                                        download={fname}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-50 hover:bg-[#0088FF] text-[#001E5A] hover:text-white border border-blue-200 text-[11px] font-semibold transition-colors"
+                                      >
+                                        <Download className="w-3 h-3" />
+                                        <span>Download {fname}</span>
+                                      </a>
+                                    );
+                                  })
+                                ) : (
+                                  <span className="text-slate-400 italic text-[11px]">
+                                    No file uploaded
+                                  </span>
+                                )}
+                              </div>
 
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    onUpdateClientQueries(
-                                      clientQueries.filter(
-                                        (item) => item.id !== qry.id
-                                      )
-                                    );
-                                    notifySaved(
-                                      `Deleted query ${qry.queryNumber}.`
-                                    );
-                                  }}
-                                  className="p-1.5 text-slate-400 hover:text-red-600"
-                                  title="Delete Query"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                              <p className="text-xs text-slate-700 bg-white p-3 rounded-lg border border-slate-200 mt-2 leading-relaxed">
+                                <strong className="text-[#001E5A]">
+                                  Working Instruction:{' '}
+                                </strong>
+                                {qry.instructions}
+                              </p>
+
+                              <div className="flex flex-wrap items-center gap-4 pt-1 text-[11px] font-mono-tabular text-emerald-800">
+                                <span className="inline-flex items-center gap-1">
+                                  <Mail className="w-3 h-3 text-emerald-600" />
+                                  ✓ Confirmation Mail Sent to {qry.clientEmail}
+                                </span>
+                                <span>·</span>
+                                <span className="inline-flex items-center gap-1">
+                                  <Mail className="w-3 h-3 text-emerald-600" />
+                                  ✓ Admin Mail Sent to {qry.adminEmailRecipient}
+                                </span>
                               </div>
                             </div>
 
-                            {isExpanded && (
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-slate-200 text-xs">
-                                <div className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-1.5">
-                                  <p className="font-mono-tabular font-bold text-emerald-700 text-[11px]">
-                                    1. CLIENT CONFIRMATION EMAIL (TO:{' '}
-                                    {qry.clientEmail})
-                                  </p>
-                                  <p className="font-bold text-[#001E5A]">
-                                    Subject: {qry.clientConfirmationSubject}
-                                  </p>
-                                  <pre className="whitespace-pre-wrap font-mono-tabular text-[11px] text-slate-600 bg-[#F8FAFC] p-2.5 rounded border border-slate-200">
-                                    {qry.clientConfirmationBody}
-                                  </pre>
-                                </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {isNewQuery && (
+                                <span className="px-2.5 py-1 rounded bg-amber-500 text-white text-[11px] font-bold">
+                                  New
+                                </span>
+                              )}
 
-                                <div className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-1.5">
-                                  <p className="font-mono-tabular font-bold text-[#0088FF] text-[11px]">
-                                    2. ADMIN NOTIFICATION EMAIL (TO:{' '}
-                                    {qry.adminEmailRecipient})
-                                  </p>
-                                  <p className="font-bold text-[#001E5A]">
-                                    Subject: {qry.adminNotificationSubject}
-                                  </p>
-                                  <pre className="whitespace-pre-wrap font-mono-tabular text-[11px] text-slate-600 bg-[#F8FAFC] p-2.5 rounded border border-slate-200">
-                                    {qry.adminNotificationBody}
-                                  </pre>
-                                </div>
-                              </div>
-                            )}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (isNewQuery) {
+                                    onUpdateClientQueries(
+                                      clientQueries.map((item) =>
+                                        item.id === qry.id
+                                          ? { ...item, status: 'contacted' }
+                                          : item
+                                      )
+                                    );
+                                  }
+                                  setExpandedEmailQueryId(
+                                    isExpanded ? null : qry.id
+                                  );
+                                }}
+                                className="px-3 py-1 rounded text-[11px] font-bold text-[#0088FF] bg-white border border-slate-300 hover:bg-[#EAF3FC]"
+                              >
+                                {isExpanded
+                                  ? 'Hide Sent Emails'
+                                  : 'View Sent Emails'}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onUpdateClientQueries(
+                                    clientQueries.filter(
+                                      (item) => item.id !== qry.id
+                                    )
+                                  );
+                                  notifySaved(
+                                    `Deleted query ${qry.queryNumber}.`
+                                  );
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-red-600"
+                                title="Delete Query"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </div>
-                        );
-                      })}
+
+                          {isExpanded && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-slate-200 text-xs">
+                              <div className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-1.5">
+                                <p className="font-mono-tabular font-bold text-emerald-700 text-[11px]">
+                                  1. CLIENT CONFIRMATION EMAIL (TO:{' '}
+                                  {qry.clientEmail})
+                                </p>
+                                <p className="font-bold text-[#001E5A]">
+                                  Subject: {qry.clientConfirmationSubject}
+                                </p>
+                                <pre className="whitespace-pre-wrap font-mono-tabular text-[11px] text-slate-600 bg-[#F8FAFC] p-2.5 rounded border border-slate-200">
+                                  {qry.clientConfirmationBody}
+                                </pre>
+                              </div>
+
+                              <div className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-1.5">
+                                <p className="font-mono-tabular font-bold text-[#0088FF] text-[11px]">
+                                  2. ADMIN NOTIFICATION EMAIL (TO:{' '}
+                                  {qry.adminEmailRecipient})
+                                </p>
+                                <p className="font-bold text-[#001E5A]">
+                                  Subject: {qry.adminNotificationSubject}
+                                </p>
+                                <pre className="whitespace-pre-wrap font-mono-tabular text-[11px] text-slate-600 bg-[#F8FAFC] p-2.5 rounded border border-slate-200">
+                                  {qry.adminNotificationBody}
+                                </pre>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

@@ -99,6 +99,10 @@ export interface OrderDoc {
   clientCompleted?: boolean;
   clientCompletedAt?: Timestamp | Date;
   reopenedByChat?: boolean;
+  paymentProofFileName?: string;
+  paymentProofDataUrl?: string;
+  paymentProofNote?: string;
+  paymentProofSubmittedAt?: string;
   createdAt: Timestamp | Date;
   updatedAt: Timestamp | Date;
 }

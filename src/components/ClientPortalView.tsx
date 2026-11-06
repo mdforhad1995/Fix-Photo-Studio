@@ -80,6 +80,10 @@ interface ClientPortalViewProps {
     password?: string;
   }) => Promise<void>;
   onOpenAdminDashboard?: () => void;
+  onSubmitInvoicePaymentProof?: (
+    order: OrderDoc,
+    payload: { fileName: string; dataUrl: string; note: string }
+  ) => Promise<void>;
 }
 
 export interface RegisteredClientAccount {
@@ -118,6 +122,7 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
   onClientPortalSessionChange,
   onUpdateClientProfile,
   onOpenAdminDashboard,
+  onSubmitInvoicePaymentProof,
 }) => {
   const [portalSubTab, setPortalSubTab] = useState<
     'engagements' | 'completed_orders' | 'notifications' | 'profile'
@@ -130,6 +135,11 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
   const [downloadFeedback, setDownloadFeedback] = useState<string | null>(null);
   const [selectedReceipt, setSelectedReceipt] = useState<NotificationAlertDoc | null>(null);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
+  const [paymentProofFileName, setPaymentProofFileName] = useState<string>('');
+  const [paymentProofDataUrl, setPaymentProofDataUrl] = useState<string>('');
+  const [paymentProofNote, setPaymentProofNote] = useState<string>('');
+  const [paymentProofSuccessMsg, setPaymentProofSuccessMsg] = useState<string | null>(null);
+  const [isSubmittingPaymentProof, setIsSubmittingPaymentProof] = useState<boolean>(false);
 
   // Client Portal Login Gate State (locks inner portal until Google OAuth or Client Email Login)
   const [clientSessionSignedIn, setClientSessionSignedIn] = useState<boolean>(() => {
@@ -712,6 +722,10 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
   };
 
   const openOrderInvoiceModal = (order: OrderDoc) => {
+    setPaymentProofFileName(order.paymentProofFileName || '');
+    setPaymentProofDataUrl(order.paymentProofDataUrl || '');
+    setPaymentProofNote(order.paymentProofNote || '');
+    setPaymentProofSuccessMsg(null);
     const matchedNotif = notifications.find(
       (n) =>
         n.invoiceRef &&
@@ -1577,28 +1591,51 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
 
                   <div className="flex flex-wrap items-center gap-2.5">
                     {isOrderInvoiceVisible(activeOrder) && (
-                      <button
-                        type="button"
-                        onClick={() => openOrderInvoiceModal(activeOrder)}
-                        className={`px-3.5 py-2 text-xs font-semibold rounded-lg border transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
-                          getInvoiceStatus(
-                            `INV-${activeOrder.orderNumber}`,
-                            activeOrder.orderNumber
-                          ) === 'paid'
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
-                            : 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
-                        }`}
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>
-                          Invoice (
-                          {getInvoiceStatus(
-                            `INV-${activeOrder.orderNumber}`,
-                            activeOrder.orderNumber
-                          ).toUpperCase()}
-                          )
-                        </span>
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => openOrderInvoiceModal(activeOrder)}
+                          className={`px-3.5 py-2 text-xs font-semibold rounded-lg border transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                            getInvoiceStatus(
+                              `INV-${activeOrder.orderNumber}`,
+                              activeOrder.orderNumber
+                            ) === 'paid'
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                              : 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                          }`}
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>
+                            Invoice (
+                            {getInvoiceStatus(
+                              `INV-${activeOrder.orderNumber}`,
+                              activeOrder.orderNumber
+                            ).toUpperCase()}
+                            )
+                          </span>
+                        </button>
+                        {getInvoiceStatus(
+                          `INV-${activeOrder.orderNumber}`,
+                          activeOrder.orderNumber
+                        ) !== 'paid' && (
+                          <button
+                            type="button"
+                            onClick={() => openOrderInvoiceModal(activeOrder)}
+                            className={`px-3 py-2 text-xs font-bold rounded-lg border transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                              activeOrder.paymentProofFileName
+                                ? 'bg-blue-50 text-blue-800 border-blue-300 hover:bg-blue-100'
+                                : 'bg-[#001E5A] hover:bg-[#0088FF] text-white border-[#001E5A]'
+                            }`}
+                          >
+                            <UploadCloud className="w-3.5 h-3.5" />
+                            <span>
+                              {activeOrder.paymentProofFileName
+                                ? 'Payment Proof Uploaded (Pending Verification)'
+                                : 'Upload Payment Proof'}
+                            </span>
+                          </button>
+                        )}
+                      </>
                     )}
 
                     {activeOrder.deliveryDownloadUrl?.trim() ? (
@@ -3090,6 +3127,171 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                     )}
                   </div>
                 </div>
+
+                {/* Customer Payment Proof / Receipt Document Upload Section (Directly inside Invoice) */}
+                {linkedOrder && (
+                  <div className="p-5 rounded-xl bg-blue-50/70 border-2 border-blue-200 space-y-4 print:hidden">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-200 pb-3">
+                      <div>
+                        <span className="text-[10px] font-mono-tabular uppercase tracking-wider text-blue-700 font-bold block">
+                          CUSTOMER PAYMENT VERIFICATION · UPLOAD PAYMENT RECEIPT / DOCUMENT
+                        </span>
+                        <h4 className="text-sm font-bold text-stone-900">
+                          Have you paid Invoice {displayInvoiceNo}? Upload Your Payment Document Here
+                        </h4>
+                      </div>
+                      {modalInvoiceStatus === 'paid' ? (
+                        <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Verified &amp; Marked PAID by Admin ✓</span>
+                        </span>
+                      ) : linkedOrder.paymentProofFileName ? (
+                        <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-amber-700" />
+                          <span>Payment Proof Sent · Pending Admin Check</span>
+                        </span>
+                      ) : (
+                        <span className="px-3 py-1 rounded-full bg-white text-stone-600 border border-stone-300 text-xs font-semibold">
+                          Awaiting Payment Proof Upload
+                        </span>
+                      )}
+                    </div>
+
+                    {linkedOrder.paymentProofFileName && (
+                      <div className="p-3.5 rounded-xl bg-white border border-blue-200 flex flex-wrap items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          <p className="text-xs font-bold text-stone-900 flex items-center gap-1.5">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span>
+                              Uploaded Payment Document:{' '}
+                              <span className="text-blue-700 font-mono-tabular">
+                                {linkedOrder.paymentProofFileName}
+                              </span>
+                            </span>
+                          </p>
+                          {linkedOrder.paymentProofNote && (
+                            <p className="text-xs text-stone-600">
+                              <strong>Transaction Note / Ref:</strong>{' '}
+                              {linkedOrder.paymentProofNote}
+                            </p>
+                          )}
+                          {linkedOrder.paymentProofSubmittedAt && (
+                            <p className="text-[11px] font-mono-tabular text-stone-400">
+                              Submitted:{' '}
+                              {new Date(
+                                linkedOrder.paymentProofSubmittedAt
+                              ).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+
+                        {linkedOrder.paymentProofDataUrl && (
+                          <a
+                            href={linkedOrder.paymentProofDataUrl}
+                            download={linkedOrder.paymentProofFileName}
+                            className="px-3.5 py-2 rounded-lg bg-stone-900 hover:bg-blue-700 text-white text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            <span>Download Uploaded Receipt</span>
+                          </a>
+                        )}
+                      </div>
+                    )}
+
+                    {paymentProofSuccessMsg && (
+                      <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-semibold flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>{paymentProofSuccessMsg}</span>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                      <div className="sm:col-span-5">
+                        <label className="block text-[11px] font-bold text-stone-700 mb-1">
+                          1. Select Payment Receipt / Screenshot / PDF *
+                        </label>
+                        <label className="w-full px-3.5 py-2.5 rounded-lg bg-white border border-dashed border-blue-400 hover:border-blue-600 cursor-pointer flex items-center justify-between gap-2 text-xs font-semibold text-blue-900 transition-colors">
+                          <span className="flex items-center gap-2 truncate">
+                            <UploadCloud className="w-4 h-4 text-blue-600 shrink-0" />
+                            <span className="truncate">
+                              {paymentProofFileName
+                                ? paymentProofFileName
+                                : 'Choose Receipt Image / PDF / File...'}
+                            </span>
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-[10px] font-mono-tabular shrink-0">
+                            Browse
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/*,.pdf,.doc,.docx,.txt,.zip"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              setPaymentProofFileName(file.name);
+                              const reader = new FileReader();
+                              reader.onload = () => {
+                                if (typeof reader.result === 'string') {
+                                  setPaymentProofDataUrl(reader.result);
+                                }
+                              };
+                              reader.readAsDataURL(file);
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="sm:col-span-4">
+                        <label className="block text-[11px] font-bold text-stone-700 mb-1">
+                          2. Transaction ID / Bank or PayPal Note (Optional)
+                        </label>
+                        <input
+                          type="text"
+                          value={paymentProofNote}
+                          onChange={(e) => setPaymentProofNote(e.target.value)}
+                          placeholder="e.g., PayPal TXN #948201 or Bank Slip"
+                          className="w-full px-3 py-2 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:border-blue-600"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-3">
+                        <button
+                          type="button"
+                          disabled={!paymentProofFileName || isSubmittingPaymentProof}
+                          onClick={async () => {
+                            if (!linkedOrder || !paymentProofFileName) return;
+                            setIsSubmittingPaymentProof(true);
+                            try {
+                              if (onSubmitInvoicePaymentProof) {
+                                await onSubmitInvoicePaymentProof(linkedOrder, {
+                                  fileName: paymentProofFileName,
+                                  dataUrl: paymentProofDataUrl,
+                                  note: paymentProofNote.trim(),
+                                });
+                              }
+                              setPaymentProofSuccessMsg(
+                                `Payment document "${paymentProofFileName}" uploaded! Studio Admin has been notified to verify your payment and update Invoice ${displayInvoiceNo} to PAID.`
+                              );
+                            } finally {
+                              setIsSubmittingPaymentProof(false);
+                            }
+                          }}
+                          className="w-full py-2.5 px-4 rounded-lg bg-blue-700 hover:bg-blue-800 disabled:bg-stone-300 text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                        >
+                          <UploadCloud className="w-3.5 h-3.5" />
+                          <span>
+                            {isSubmittingPaymentProof
+                              ? 'Uploading...'
+                              : linkedOrder.paymentProofFileName
+                              ? 'Update Payment Proof'
+                              : 'Submit Payment Proof'}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-stone-200 print:hidden">
                   <span className="text-[11px] font-mono-tabular text-stone-500">

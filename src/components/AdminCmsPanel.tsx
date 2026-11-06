@@ -66,7 +66,34 @@ import {
 import { BeforeAfterStudioCanvas } from './StudioArtworks';
 import { RichTextEditor } from './RichTextEditor';
 
+export function sanitizeUrlSlug(rawInput: string, fallbackSlug = ''): string {
+  const trimmed = (rawInput || '')
+    .trim()
+    .replace(/^https?:\/\/[^/]+/i, '')
+    .replace(/^#+/, '')
+    .replace(/^service\//i, '')
+    .replace(/^\/+|\/+$/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+  return trimmed || fallbackSlug;
+}
+
+export const DEFAULT_MAIN_PAGE_SLUGS: Record<string, string> = {
+  home: '',
+  services_page: 'photo-editing-services',
+  video_editing_page: 'video-editing-services',
+  portfolio_page: 'portfolio',
+  free_trial_page: 'free-trial',
+  get_quote_page: 'get-quote',
+  blogs_page: 'blogs',
+  reviews_page: 'reviews',
+  portal: 'client-portal',
+};
+
 export interface PageSeoSpec {
+  slug?: string;
   seoTitle: string;
   seoMetaDescription: string;
 }
@@ -118,41 +145,55 @@ export const DEFAULT_SITE_CONFIG: SiteGlobalConfig = {
   supportEmail: 'asiaclipp@gmail.com',
   pageSeo: {
     home: {
+      slug: '',
       seoTitle: 'FixPhoto Studio – Commercial Photo & Video Editing',
       seoMetaDescription:
         'Get pixel-perfect clipping paths ($0.39/img), 3D ghost mannequins, jewelry retouching, and 4K video editing in 12–24h. Try 5 images free today.',
     },
     services_page: {
+      slug: 'photo-editing-services',
       seoTitle: 'All Photo & Video Editing Services – FixPhoto Studio',
       seoMetaDescription:
         'Explore dedicated photo editing and 4K video post-production pods with 12h–24h SLA turnaround and 99.94% QA accuracy. Order online.',
     },
     video_editing_page: {
+      slug: 'video-editing-services',
       seoTitle: '4K Video Editing & Color Grading – FixPhoto Studio',
       seoMetaDescription:
         'Commercial 4K product video editing, fashion social reels, wedding cinema grading, and VFX rotoscoping delivered in 12–48h.',
     },
     portfolio_page: {
+      slug: 'portfolio',
       seoTitle: 'Before & After Photo & Video Portfolio – FixPhoto Studio',
       seoMetaDescription:
         'Inspect pixel-level Before & After clipping paths, 3D ghost mannequins, fine jewelry retouching, and 4K video showreels.',
     },
     free_trial_page: {
+      slug: 'free-trial',
       seoTitle: 'Free 5-Image Photo Editing Trial – FixPhoto Studio',
       seoMetaDescription:
         'Test FixPhoto Studio free of charge. Upload up to 5 RAW or studio frames and receive retouched masters in 12–24 hours.',
     },
     get_quote_page: {
+      slug: 'get-quote',
       seoTitle: 'Instant Volume Quote Calculator – FixPhoto Studio',
       seoMetaDescription:
         'Calculate custom bulk pricing for commercial photo editing and 4K video post-production with guaranteed SLA delivery.',
     },
     blogs_page: {
+      slug: 'blogs',
       seoTitle: 'Commercial Photo & Video Editing Blog – FixPhoto Studio',
       seoMetaDescription:
         'Read technical guides on Bezier clipping paths, 3D ghost mannequins, fine jewelry retouching, Flambient HDR, and 4K video post-production.',
     },
+    reviews_page: {
+      slug: 'reviews',
+      seoTitle: 'Verified Client Reviews & Outcomes – FixPhoto Studio',
+      seoMetaDescription:
+        'Read verified studio reviews and commercial e-commerce production outcomes from global retail brands, jewelry houses, and apparel photographers.',
+    },
     portal: {
+      slug: 'client-portal',
       seoTitle: 'Client Portal & Live Batch Tracker – FixPhoto Studio',
       seoMetaDescription:
         'Manage active photo and video retouching orders, track 6-stage QA progress in real time, and download official PDF invoices.',
@@ -236,6 +277,8 @@ export interface AdminAccountRecord {
   email: string;
   password: string;
   role: 'super_admin' | 'sub_admin';
+  roleLabel?: string;
+  allowedTabs?: AdminTab[];
   createdBy: string;
   createdAt: string;
 }
@@ -246,6 +289,7 @@ const DEFAULT_MAIN_ADMIN_ACCOUNT: AdminAccountRecord = {
   email: 'asiaclipp@gmail.com',
   password: 'fixphoto2026',
   role: 'super_admin',
+  roleLabel: 'Main Super Admin (Full Owner)',
   createdBy: 'System Owner',
   createdAt: '2026-01-01T00:00:00.000Z',
 };
@@ -256,6 +300,7 @@ const DEFAULT_SECONDARY_MAIN_ADMIN_ACCOUNT: AdminAccountRecord = {
   email: 'admin@fixphotostudio.com',
   password: 'fixphoto2026',
   role: 'super_admin',
+  roleLabel: 'Main Super Admin (Full Owner)',
   createdBy: 'System Owner',
   createdAt: '2026-01-01T00:00:00.000Z',
 };
@@ -275,6 +320,173 @@ type AdminTab =
   | 'global_hero_footer'
   | 'admin_accounts'
   | 'database_backup';
+
+const ALL_ADMIN_TABS: AdminTab[] = [
+  'dashboard_overview',
+  'plans_and_orders',
+  'complete_orders',
+  'invoices_billing',
+  'client_queries',
+  'menu_and_services',
+  'portfolio_before_after',
+  'video_studio_showreel',
+  'reviews_carousel',
+  'blog_manager',
+  'seo_manager',
+  'global_hero_footer',
+  'admin_accounts',
+  'database_backup',
+];
+
+const ADMIN_MODULE_PERMISSION_OPTIONS: {
+  id: AdminTab;
+  label: string;
+  category: string;
+  description: string;
+}[] = [
+  {
+    id: 'menu_and_services',
+    label: 'Pages & Service Builder',
+    category: 'Website Content (CMS)',
+    description: 'Create/edit service pages, page URL slugs, split sections & pricing',
+  },
+  {
+    id: 'blog_manager',
+    label: 'Blog Posts CMS',
+    category: 'Website Content (CMS)',
+    description: 'Write, edit & publish blog posts and blog URL slugs',
+  },
+  {
+    id: 'seo_manager',
+    label: 'All Pages & Blog SEO + URL Slugs',
+    category: 'Website Content (CMS)',
+    description: 'Edit URL slugs, SEO Titles & Meta Descriptions for all pages & blogs',
+  },
+  {
+    id: 'portfolio_before_after',
+    label: 'Portfolio Before / After',
+    category: 'Website Content (CMS)',
+    description: 'Upload & edit Before/After portfolio comparison cards',
+  },
+  {
+    id: 'video_studio_showreel',
+    label: 'Video Studio Showreels',
+    category: 'Website Content (CMS)',
+    description: 'Add & edit 4K video editing showreel projects',
+  },
+  {
+    id: 'reviews_carousel',
+    label: 'Client Reviews CMS',
+    category: 'Website Content (CMS)',
+    description: 'Publish & edit verified customer testimonials',
+  },
+  {
+    id: 'global_hero_footer',
+    label: 'Site Settings, Hero & Footer',
+    category: 'Website Content (CMS)',
+    description: 'Edit homepage hero headlines, metrics & footer copy',
+  },
+  {
+    id: 'plans_and_orders',
+    label: 'Orders & Work Pipeline',
+    category: 'Operations & Billing',
+    description: 'Approve pending orders, chat with clients & update production stages',
+  },
+  {
+    id: 'complete_orders',
+    label: 'Complete Order Archive',
+    category: 'Operations & Billing',
+    description: 'View completed orders & send/update delivery download links',
+  },
+  {
+    id: 'invoices_billing',
+    label: 'Invoices & Payment Setup',
+    category: 'Operations & Billing',
+    description: 'View/edit client invoices, mark paid & configure payment details',
+  },
+  {
+    id: 'client_queries',
+    label: 'Client Queries & Trials',
+    category: 'Operations & Billing',
+    description: 'Manage Free Trial & Quote inquiries and download client files',
+  },
+  {
+    id: 'dashboard_overview',
+    label: 'Executive Dashboard Overview',
+    category: 'System & Overview',
+    description: 'View executive summary KPIs (Orders, Revenue, Invoices, Queries)',
+  },
+  {
+    id: 'database_backup',
+    label: 'Database Download & SQL',
+    category: 'System & Overview',
+    description: 'Export/restore JSON, SQL & CSV database backups',
+  },
+];
+
+const ADMIN_ROLE_PRESETS: {
+  id: string;
+  label: string;
+  tabs: AdminTab[];
+}[] = [
+  {
+    id: 'page_content_editor',
+    label: 'Page & Content Editor Only (Hides Orders, Invoices & Queries)',
+    tabs: [
+      'menu_and_services',
+      'portfolio_before_after',
+      'video_studio_showreel',
+      'reviews_carousel',
+      'global_hero_footer',
+    ],
+  },
+  {
+    id: 'page_blog_seo_editor',
+    label: 'Page, Blog & SEO Editor (Hides Orders, Invoices & Queries)',
+    tabs: [
+      'menu_and_services',
+      'blog_manager',
+      'seo_manager',
+      'portfolio_before_after',
+      'video_studio_showreel',
+      'reviews_carousel',
+      'global_hero_footer',
+    ],
+  },
+  {
+    id: 'blog_seo_only',
+    label: 'Blog & SEO Manager Only (Hides Pages, Orders & Invoices)',
+    tabs: ['blog_manager', 'seo_manager'],
+  },
+  {
+    id: 'orders_production_only',
+    label: 'Order & Production Manager Only (Hides Invoices & Website CMS)',
+    tabs: ['plans_and_orders', 'complete_orders', 'client_queries'],
+  },
+  {
+    id: 'invoices_billing_only',
+    label: 'Invoice & Billing Manager Only (Hides Orders & Website CMS)',
+    tabs: ['invoices_billing'],
+  },
+  {
+    id: 'full_sub_admin',
+    label: 'Full Sub-Admin (All Orders, Invoices, Queries, Pages & Blogs)',
+    tabs: [
+      'dashboard_overview',
+      'plans_and_orders',
+      'complete_orders',
+      'invoices_billing',
+      'client_queries',
+      'menu_and_services',
+      'portfolio_before_after',
+      'video_studio_showreel',
+      'reviews_carousel',
+      'blog_manager',
+      'seo_manager',
+      'global_hero_footer',
+    ],
+  },
+];
 
 export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
   isAuthenticatedGoogleAdmin,
@@ -399,6 +611,23 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
   const [newAdminName, setNewAdminName] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [newAdminPresetId, setNewAdminPresetId] = useState<string>(
+    'page_blog_seo_editor'
+  );
+  const [newAdminRoleLabel, setNewAdminRoleLabel] = useState<string>(
+    'Page, Blog & SEO Editor'
+  );
+  const [newAdminAllowedTabs, setNewAdminAllowedTabs] = useState<AdminTab[]>([
+    'menu_and_services',
+    'blog_manager',
+    'seo_manager',
+    'portfolio_before_after',
+    'video_studio_showreel',
+    'reviews_carousel',
+    'global_hero_footer',
+  ]);
+  const [editingSubAdminDraft, setEditingSubAdminDraft] =
+    useState<AdminAccountRecord | null>(null);
   const [mainAdminNewPassword, setMainAdminNewPassword] = useState('');
 
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard_overview');
@@ -450,9 +679,13 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
   const [editingServiceSlug, setEditingServiceSlug] = useState<string>(
     servicesList[0]?.slug || 'clipping-path-service'
   );
+  const [editingServiceOriginalSlug, setEditingServiceOriginalSlug] = useState<
+    string | null
+  >(null);
   const [newSrvDivision, setNewSrvDivision] =
     useState<StudioDivision>('photo_editing');
   const [newSrvName, setNewSrvName] = useState('');
+  const [newSrvSlug, setNewSrvSlug] = useState('');
   const [newSrvRate, setNewSrvRate] = useState('0.65');
   const [newSrvTurnaround, setNewSrvTurnaround] = useState(
     '12h–24h Express SLA · Dedicated Pod'
@@ -530,6 +763,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
 
   // 6. New Blog Post Creator State (Always added 1st at index 0)
   const [newBlogTitle, setNewBlogTitle] = useState('');
+  const [newBlogSlug, setNewBlogSlug] = useState('');
   const [newBlogCategory, setNewBlogCategory] = useState(
     'Clipping Path & E-Commerce'
   );
@@ -606,6 +840,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
   const [editingSeoDraft, setEditingSeoDraft] = useState<{
     type: 'main_page' | 'service_page' | 'blog_post';
     id: string;
+    slug: string;
     seoTitle: string;
     seoMetaDescription: string;
   } | null>(null);
@@ -652,6 +887,33 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
       'asiaclipp@gmail.com' ||
     (loggedInAdminEmail || googleEmail || '').toLowerCase() ===
       'admin@fixphotostudio.com';
+
+  const hasAdminTabAccess = (tab: AdminTab): boolean => {
+    if (isMainSuperAdmin) return true;
+    if (tab === 'admin_accounts') return false;
+    if (
+      currentAdminAccount?.allowedTabs &&
+      Array.isArray(currentAdminAccount.allowedTabs) &&
+      currentAdminAccount.allowedTabs.length > 0
+    ) {
+      return currentAdminAccount.allowedTabs.includes(tab);
+    }
+    return true;
+  };
+
+  const allowedAdminTabs: AdminTab[] = ALL_ADMIN_TABS.filter((t) =>
+    hasAdminTabAccess(t)
+  );
+
+  useEffect(() => {
+    if (
+      adminUnlocked &&
+      allowedAdminTabs.length > 0 &&
+      !allowedAdminTabs.includes(activeTab)
+    ) {
+      setActiveTab(allowedAdminTabs[0]);
+    }
+  }, [adminUnlocked, activeTab, allowedAdminTabs]);
 
   const unlockAdminSession = (authenticatedEmail: string, toastMsg: string) => {
     setLoggedInAdminEmail(authenticatedEmail);
@@ -748,6 +1010,12 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
     if (!newAdminName.trim() || !cleanEmail || !newAdminPassword.trim()) {
       return;
     }
+    if (newAdminAllowedTabs.length === 0) {
+      notifySaved(
+        'Please select at least 1 module/section that this user is allowed to access.'
+      );
+      return;
+    }
     if (adminAccounts.some((a) => a.email.toLowerCase() === cleanEmail)) {
       notifySaved(`An admin account with email "${cleanEmail}" already exists.`);
       return;
@@ -758,6 +1026,8 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
       email: cleanEmail,
       password: newAdminPassword.trim(),
       role: 'sub_admin',
+      roleLabel: newAdminRoleLabel.trim() || 'Custom Role Sub-Admin',
+      allowedTabs: [...newAdminAllowedTabs],
       createdBy: loggedInAdminEmail || 'asiaclipp@gmail.com',
       createdAt: new Date().toISOString(),
     };
@@ -766,7 +1036,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
     setNewAdminEmail('');
     setNewAdminPassword('');
     notifySaved(
-      `Created new Admin Account for "${created.name}" (${created.email}). They can now log in at #admin-login.`
+      `Created Admin Account "${created.name}" (${created.email}) with Role: ${created.roleLabel} (${created.allowedTabs?.length} modules allowed).`
     );
   };
 
@@ -915,10 +1185,12 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
   const handleCreateCustomServicePage = (e: React.FormEvent) => {
     e.preventDefault();
     if (newSrvName.trim().length < 2) return;
-    const slug = newSrvName
+    const defaultSlug = newSrvName
       .trim()
       .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-');
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    const slug = sanitizeUrlSlug(newSrvSlug || defaultSlug, defaultSlug);
     const rate = Math.max(0.1, Number(newSrvRate) || 0.65);
     const divList = servicesList.filter((s) => s.division === newSrvDivision);
     const idxNum =
@@ -1036,6 +1308,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
     onUpdateServicesList([...servicesList, created]);
     setEditingServiceSlug(created.slug);
     setNewSrvName('');
+    setNewSrvSlug('');
     setNewSrvSubtitle('');
     setNewSrvBeforeImg('');
     setNewSrvAfterImg('');
@@ -1043,7 +1316,52 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
     setNewSrvSeoDesc('');
     setShowAddNewServiceForm(false);
     notifySaved(
-      `Created new Custom Service Page "${created.title}" (${created.indexNumber}) with SEO metadata!`
+      `Created new Custom Service Page "${created.title}" at https://fixphotostudio.com/${created.slug}/`
+    );
+  };
+
+  const saveEditedServicePageWithSlugCascade = (draft: ServiceDefinition) => {
+    const oldSlug = editingServiceOriginalSlug || draft.slug;
+    const cleanNewSlug = sanitizeUrlSlug(draft.slug, oldSlug);
+    const finalDraft: ServiceDefinition = {
+      ...draft,
+      slug: cleanNewSlug,
+    };
+
+    const nextServices = servicesList.map((s) =>
+      s.slug === oldSlug ? finalDraft : s
+    );
+    onUpdateServicesList(nextServices);
+
+    if (cleanNewSlug !== oldSlug) {
+      const nextMainMenu = mainMenuServices.map((m) => ({
+        ...m,
+        targetSlug: m.targetSlug === oldSlug ? cleanNewSlug : m.targetSlug,
+        relatedSlugs: (m.relatedSlugs || []).map((rs) =>
+          rs === oldSlug ? cleanNewSlug : rs
+        ),
+      }));
+      onUpdateMainMenuServices(nextMainMenu);
+
+      const nextVideos = videoShowreelProjects.map((v) =>
+        v.serviceSlug === oldSlug ? { ...v, serviceSlug: cleanNewSlug } : v
+      );
+      onUpdateVideoShowreelProjects(nextVideos);
+
+      const nextBlogs = blogPosts.map((b) =>
+        b.relatedServiceSlug === oldSlug
+          ? { ...b, relatedServiceSlug: cleanNewSlug }
+          : b
+      );
+      onUpdateBlogPosts(nextBlogs);
+    }
+
+    setEditingServiceSlug(cleanNewSlug);
+    setIsServiceEditorOpen(false);
+    setEditingServiceOriginalSlug(null);
+    setEditingServiceDraft(null);
+    notifySaved(
+      `Saved & published "${finalDraft.title}" at https://fixphotostudio.com/${cleanNewSlug}/`
     );
   };
 
@@ -1249,12 +1567,13 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
     e.preventDefault();
     if (!newBlogTitle.trim() || !newBlogExcerpt.trim()) return;
 
-    const cleanSlug =
+    const fallbackSlug =
       newBlogTitle
         .trim()
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/(^-|-$)/g, '') || `blog-${Date.now()}`;
+    const cleanSlug = sanitizeUrlSlug(newBlogSlug || fallbackSlug, fallbackSlug);
 
     const todayFormatted = new Date().toLocaleDateString('en-US', {
       month: 'short',
@@ -1289,6 +1608,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
     // Prepend at index 0 so the newest/last added blog post ALWAYS shows 1st on the website
     onUpdateBlogPosts([createdBlog, ...blogPosts]);
     setNewBlogTitle('');
+    setNewBlogSlug('');
     setNewBlogExcerpt('');
     setNewBlogContent('');
     setNewBlogCoverImg('');
@@ -1296,7 +1616,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
     setNewBlogSeoDesc('');
     setShowAddNewBlogForm(false);
     notifySaved(
-      `Published new Blog Post "${createdBlog.title}" as #1 (First) on the Website!`
+      `Published new Blog Post "${createdBlog.title}" at https://fixphotostudio.com/${createdBlog.slug}/`
     );
   };
 
@@ -2191,6 +2511,13 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
     },
   ];
 
+  const visibleSidebarGroups = sidebarGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => hasAdminTabAccess(item.id)),
+    }))
+    .filter((group) => group.items.length > 0);
+
   const activeTabMeta: Record<AdminTab, { title: string; subtitle: string }> = {
     dashboard_overview: {
       title: 'Executive Dashboard Overview',
@@ -2218,9 +2545,9 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
         'Review inquiries from visitors and logged-in clients, download uploaded trial/quote files, and inspect email logs.',
     },
     menu_and_services: {
-      title: 'Service Pages, Split Image+Text Sections, Pricing & SEO CMS',
+      title: 'Service Pages, URL Slugs, Split Image+Text Sections, Pricing & SEO CMS',
       subtitle:
-        'Create new Photo or Video service pages, edit SEO Title & Meta Description, add Split Image+Text blocks, and edit complexity tiers.',
+        'Create new Photo or Video service pages, customize Page URL Slugs (domain/slug/), edit SEO Title & Meta Description, and add Split Image+Text blocks.',
     },
     portfolio_before_after: {
       title: 'Portfolio Before & After Image Manager',
@@ -2238,14 +2565,14 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
         'Publish new client testimonials and manage the 3-card customer review showcase.',
     },
     blog_manager: {
-      title: 'Studio Blog Posts & SEO Manager (Latest Blog Shown 1st)',
+      title: 'Studio Blog Posts, URL Slugs & SEO Manager (Latest Blog Shown 1st)',
       subtitle:
-        'Publish new blog articles (automatically shown 1st on the website after Reviews), edit existing articles, and customize each blog SEO Title & Meta Description.',
+        'Publish new blog articles (automatically shown 1st on the website after Reviews), edit existing articles, and customize each blog URL Slug & SEO.',
     },
     seo_manager: {
-      title: 'On-Page SEO Manager — All Website Pages, Service Pages & Blog Posts',
+      title: 'URL Slugs & On-Page SEO Manager — All Website Pages, Service Pages & Blog Posts',
       subtitle:
-        'Edit live SEO Title (<title>), Meta Description (<meta name="description">), OpenGraph tags, and Schema.org JSON-LD for every page and blog on your website.',
+        'Edit live Page URL Slugs (https://fixphotostudio.com/slug/), SEO Title (<title>), Meta Description, and Schema.org for every page and blog.',
     },
     global_hero_footer: {
       title: 'Global Website Settings, Homepage Hero & Footer Copy',
@@ -2253,9 +2580,9 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
         'Customize the homepage hero headline, proof counters, and footer information.',
     },
     admin_accounts: {
-      title: 'Create Admin Account & Strict Master Admin Access Control',
+      title: 'Create Admin Account & Role-Based Module Access Control',
       subtitle:
-        'Logged in as Master Admin (asiaclipp@gmail.com): create new Admin accounts, change the master password, or revoke sub-admin access.',
+        'Logged in as Master Admin (asiaclipp@gmail.com): create new Admin accounts, assign specific role permissions (Pages, Blogs, Orders, Invoices), or revoke access.',
     },
     database_backup: {
       title: 'Database Download, SQL Export & Backup Center',
@@ -2291,9 +2618,9 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
             </span>
           </div>
 
-          {/* Grouped Sidebar Navigation */}
+          {/* Grouped Sidebar Navigation (Filtered by User's Allowed Modules) */}
           <div className="space-y-6">
-            {sidebarGroups.map((group) => (
+            {visibleSidebarGroups.map((group) => (
               <div key={group.groupTitle} className="space-y-1.5">
                 <p className="px-3 text-[10px] font-mono-tabular font-bold tracking-wider text-slate-400 uppercase">
                   {group.groupTitle}
@@ -2375,8 +2702,11 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
         <div className="p-5 border-t border-white/10 bg-[#030B1B] space-y-3">
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-[10px] font-mono-tabular text-emerald-400 font-semibold">
-                ● {isMainSuperAdmin ? 'MAIN SUPER ADMIN' : 'SUB-ADMIN SESSION'}
+              <p className="text-[10px] font-mono-tabular text-emerald-400 font-semibold uppercase truncate">
+                ●{' '}
+                {isMainSuperAdmin
+                  ? 'MAIN SUPER ADMIN'
+                  : currentAdminAccount?.roleLabel || 'SUB-ADMIN SESSION'}
               </p>
               <p className="text-xs font-bold text-white truncate">
                 {loggedInAdminEmail || googleEmail || 'asiaclipp@gmail.com'}
@@ -2426,18 +2756,19 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            {pendingApprovalOrdersCount > 0 && (
-              <button
-                type="button"
-                onClick={() => setActiveTab('plans_and_orders')}
-                className="px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-xs font-bold transition-colors flex items-center gap-1.5"
-              >
-                <Clock className="w-3.5 h-3.5 text-amber-600" />
-                <span>{pendingApprovalOrdersCount} Pending Orders</span>
-              </button>
-            )}
+            {hasAdminTabAccess('plans_and_orders') &&
+              pendingApprovalOrdersCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('plans_and_orders')}
+                  className="px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-xs font-bold transition-colors flex items-center gap-1.5"
+                >
+                  <Clock className="w-3.5 h-3.5 text-amber-600" />
+                  <span>{pendingApprovalOrdersCount} Pending Orders</span>
+                </button>
+              )}
 
-            {newQueriesCount > 0 && (
+            {hasAdminTabAccess('client_queries') && newQueriesCount > 0 && (
               <button
                 type="button"
                 onClick={() => setActiveTab('client_queries')}
@@ -2448,23 +2779,25 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => {
-                if (activeTab === 'client_queries' && newQueriesCount > 0) {
-                  onUpdateClientQueries(
-                    clientQueries.map((q) =>
-                      q.status === 'new' ? { ...q, status: 'contacted' } : q
-                    )
-                  );
-                }
-                setActiveTab('admin_accounts');
-              }}
-              className="px-3 py-1.5 text-xs font-bold text-[#001E5A] bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors flex items-center gap-1.5"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-[#0088FF]" />
-              <span className="hidden sm:inline">Manage Admins</span>
-            </button>
+            {isMainSuperAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeTab === 'client_queries' && newQueriesCount > 0) {
+                    onUpdateClientQueries(
+                      clientQueries.map((q) =>
+                        q.status === 'new' ? { ...q, status: 'contacted' } : q
+                      )
+                    );
+                  }
+                  setActiveTab('admin_accounts');
+                }}
+                className="px-3 py-1.5 text-xs font-bold text-[#001E5A] bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors flex items-center gap-1.5"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-[#0088FF]" />
+                <span className="hidden sm:inline">Manage Admins</span>
+              </button>
+            )}
 
             {isMainSuperAdmin && (
               <button
@@ -3007,6 +3340,66 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                             </span>
                           </div>
                         </div>
+
+                        {ord.paymentProofFileName && (
+                          <div className="mt-3 p-3.5 rounded-xl bg-blue-50/80 border-2 border-[#0088FF] flex flex-wrap items-center justify-between gap-3">
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="px-2 py-0.5 rounded bg-[#001E5A] text-white text-[10px] font-mono-tabular font-bold">
+                                  CUSTOMER PAYMENT PROOF UPLOADED
+                                </span>
+                                <span className="text-xs font-bold text-[#001E5A] font-mono-tabular">
+                                  {ord.paymentProofFileName}
+                                </span>
+                                {ord.paymentProofSubmittedAt && (
+                                  <span className="text-[11px] font-mono-tabular text-slate-500">
+                                    · {new Date(ord.paymentProofSubmittedAt).toLocaleString()}
+                                  </span>
+                                )}
+                              </div>
+                              {ord.paymentProofNote && (
+                                <p className="text-xs text-slate-700">
+                                  <strong>Customer Payment Note / Ref:</strong>{' '}
+                                  {ord.paymentProofNote}
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              {ord.paymentProofDataUrl && (
+                                <a
+                                  href={ord.paymentProofDataUrl}
+                                  download={ord.paymentProofFileName}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-3 py-1.5 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-[#0088FF] text-xs font-bold transition-colors flex items-center gap-1.5"
+                                >
+                                  <Download className="w-3.5 h-3.5 text-[#0088FF]" />
+                                  <span>Download / View Payment Document</span>
+                                </a>
+                              )}
+                              {ordInvoiceStatus === 'pending' && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    await onUpdateInvoiceStatus(
+                                      ord.orderNumber,
+                                      'paid',
+                                      ord.orderNumber
+                                    );
+                                    notifySaved(
+                                      `Payment verified! Invoice ${ord.orderNumber} marked as PAID ✓!`
+                                    );
+                                  }}
+                                  className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-xs"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Verify Payment &amp; Mark PAID ✓</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Right Actions: Approve Order (One-Way) & Mark Invoice PAID (One-Way) */}
@@ -3902,6 +4295,77 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                             </strong>
                           </span>
                         </div>
+
+                        {/* Customer Uploaded Payment Proof / Receipt Verification Banner */}
+                        {ord.paymentProofFileName && (
+                          <div className="mt-2 p-3 rounded-xl bg-blue-50/90 border border-[#0088FF] flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex flex-wrap items-center gap-3">
+                              {ord.paymentProofDataUrl &&
+                                ord.paymentProofDataUrl.startsWith('data:image/') && (
+                                  <img
+                                    src={ord.paymentProofDataUrl}
+                                    alt={ord.paymentProofFileName}
+                                    className="w-12 h-12 rounded-lg object-cover border border-blue-300 shrink-0"
+                                  />
+                                )}
+                              <div className="space-y-0.5">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="px-2 py-0.5 rounded bg-[#001E5A] text-white text-[10px] font-mono-tabular font-bold">
+                                    PAYMENT DOCUMENT UPLOADED BY CUSTOMER
+                                  </span>
+                                  <span className="text-xs font-bold text-[#001E5A] font-mono-tabular">
+                                    {ord.paymentProofFileName}
+                                  </span>
+                                  {ord.paymentProofSubmittedAt && (
+                                    <span className="text-[11px] font-mono-tabular text-slate-500">
+                                      · {new Date(ord.paymentProofSubmittedAt).toLocaleString()}
+                                    </span>
+                                  )}
+                                </div>
+                                {ord.paymentProofNote && (
+                                  <p className="text-xs text-slate-700">
+                                    <strong>Transaction Ref / Note:</strong>{' '}
+                                    {ord.paymentProofNote}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              {ord.paymentProofDataUrl && (
+                                <a
+                                  href={ord.paymentProofDataUrl}
+                                  download={ord.paymentProofFileName}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="px-3 py-1.5 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-[#0088FF] text-xs font-bold transition-colors flex items-center gap-1.5"
+                                >
+                                  <Download className="w-3.5 h-3.5 text-[#0088FF]" />
+                                  <span>Download / View Receipt</span>
+                                </a>
+                              )}
+                              {ordInvoiceStatus === 'pending' && (
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    await onUpdateInvoiceStatus(
+                                      invNo,
+                                      'paid',
+                                      ord.orderNumber
+                                    );
+                                    notifySaved(
+                                      `Payment verified! Invoice ${invNo} marked as PAID ✓!`
+                                    );
+                                  }}
+                                  className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors flex items-center gap-1.5 shadow-xs"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Verify Payment &amp; Mark PAID ✓</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2">
@@ -5617,16 +6081,10 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            const next = servicesList.map((s) =>
-                              s.slug === editingServiceDraft.slug
-                                ? editingServiceDraft
-                                : s
+                            saveEditedServicePageWithSlugCascade(
+                              editingServiceDraft
                             );
-                            onUpdateServicesList(next);
                             setIsServiceEditorOpen(false);
-                            notifySaved(
-                              `Saved & published updates to "${editingServiceDraft.title}"!`
-                            );
                             setEditingServiceDraft(null);
                           }}
                           className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
@@ -5691,6 +6149,44 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                           }
                           className="w-full px-3 py-2 text-xs font-mono-tabular font-bold bg-white border border-slate-300 rounded-lg"
                         />
+                      </div>
+                    </div>
+
+                    {/* Editable Page URL Slug (https://fixphotostudio.com/<slug>/) */}
+                    <div className="p-3.5 rounded-xl bg-white border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <span className="text-[11px] font-mono-tabular font-bold text-[#0088FF] block">
+                          CUSTOMIZABLE PAGE URL SLUG (DOMAIN/URL)
+                        </span>
+                        <p className="text-xs text-slate-600">
+                          Live Page URL:{' '}
+                          <code className="font-mono-tabular font-bold text-[#001E5A] bg-blue-50 px-1.5 py-0.5 rounded">
+                            https://fixphotostudio.com/
+                            {sanitizeUrlSlug(editingServiceDraft.slug)}/
+                          </code>
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 sm:w-96">
+                        <span className="text-xs font-mono-tabular text-slate-500 shrink-0">
+                          fixphotostudio.com/
+                        </span>
+                        <input
+                          type="text"
+                          value={editingServiceDraft.slug}
+                          onChange={(e) =>
+                            setEditingServiceDraft({
+                              ...editingServiceDraft,
+                              slug: e.target.value
+                                .toLowerCase()
+                                .replace(/[^a-z0-9-_]/g, '-'),
+                            })
+                          }
+                          placeholder="photo-retouching-services"
+                          className="w-full px-2.5 py-1.5 text-xs font-mono-tabular font-bold text-[#001E5A] bg-[#F8FAFC] border border-blue-300 rounded-lg"
+                        />
+                        <span className="text-xs font-mono-tabular text-slate-500 shrink-0">
+                          /
+                        </span>
                       </div>
                     </div>
 
@@ -6095,16 +6591,10 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          const next = servicesList.map((s) =>
-                            s.slug === editingServiceDraft.slug
-                              ? editingServiceDraft
-                              : s
+                          saveEditedServicePageWithSlugCascade(
+                            editingServiceDraft
                           );
-                          onUpdateServicesList(next);
                           setIsServiceEditorOpen(false);
-                          notifySaved(
-                            `Saved & published updates to "${editingServiceDraft.title}"!`
-                          );
                           setEditingServiceDraft(null);
                         }}
                         className="px-6 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors flex items-center gap-2 shadow-xs"
@@ -6121,7 +6611,8 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                   {servicesList.map((srv) => {
                     const isBeingEdited =
                       isServiceEditorOpen &&
-                      editingServiceDraft?.slug === srv.slug;
+                      (editingServiceDraft?.slug === srv.slug ||
+                        editingServiceOriginalSlug === srv.slug);
                     return (
                       <div
                         key={srv.slug}
@@ -6159,7 +6650,9 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                             <span>·</span>
                             <span>{srv.turnaroundLabel}</span>
                             <span>·</span>
-                            <span>Slug: #{srv.slug}</span>
+                            <span className="text-[#001E5A] font-semibold">
+                              URL: https://fixphotostudio.com/{srv.slug}/
+                            </span>
                           </div>
                         </div>
 
@@ -6179,6 +6672,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                             type="button"
                             onClick={() => {
                               setEditingServiceSlug(srv.slug);
+                              setEditingServiceOriginalSlug(srv.slug);
                               setEditingServiceDraft({ ...srv });
                               setIsServiceEditorOpen(true);
                               setShowAddNewServiceForm(false);
@@ -8283,6 +8777,35 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                               </div>
                             </div>
 
+                            {/* Editable Blog URL Slug */}
+                            <div className="p-3 rounded-xl bg-[#F8FAFC] border border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <span className="text-[11px] font-mono-tabular font-bold text-[#0088FF]">
+                                BLOG URL SLUG: https://fixphotostudio.com/
+                                {sanitizeUrlSlug(editingBlogDraft.slug)}/
+                              </span>
+                              <div className="flex items-center gap-1.5 sm:w-80">
+                                <span className="text-xs font-mono-tabular text-slate-500">
+                                  /
+                                </span>
+                                <input
+                                  type="text"
+                                  value={editingBlogDraft.slug}
+                                  onChange={(e) =>
+                                    setEditingBlogDraft({
+                                      ...editingBlogDraft,
+                                      slug: e.target.value
+                                        .toLowerCase()
+                                        .replace(/[^a-z0-9-_]/g, '-'),
+                                    })
+                                  }
+                                  className="w-full px-2.5 py-1 text-xs font-mono-tabular font-bold text-[#001E5A] bg-white border border-blue-300 rounded-lg"
+                                />
+                                <span className="text-xs font-mono-tabular text-slate-500">
+                                  /
+                                </span>
+                              </div>
+                            </div>
+
                             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                               <div>
                                 <label className="block text-[11px] font-semibold text-slate-600 mb-1">
@@ -8495,13 +9018,13 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
               <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5 shadow-xs">
                 <div className="border-b border-slate-200 pb-3">
                   <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
-                    01 · MAIN WEBSITE PAGES ON-PAGE SEO
+                    01 · MAIN WEBSITE PAGES ON-PAGE SEO &amp; CUSTOM URL SLUGS (DOMAIN/URL)
                   </p>
                   <h2 className="text-lg font-bold text-[#001E5A]">
-                    Main Website Pages SEO — Click Edit Icon to Modify Title &amp; Meta Description
+                    Main Website Pages SEO &amp; URL Slugs — Click Edit to Modify URL Slug, Title &amp; Meta Description
                   </h2>
                   <p className="text-xs text-slate-600">
-                    Click <strong>Edit SEO</strong> on any page to update its live <code className="font-mono-tabular bg-slate-100 px-1 rounded">&lt;title&gt;</code> and <code className="font-mono-tabular bg-slate-100 px-1 rounded">&lt;meta name=&quot;description&quot;&gt;</code>, then click <strong>Save &amp; Publish SEO</strong>.
+                    Click <strong>Edit SEO &amp; URL</strong> on any page to customize its clean page URL (<code className="font-mono-tabular bg-slate-100 px-1 rounded">https://fixphotostudio.com/slug/</code>), live <code className="font-mono-tabular bg-slate-100 px-1 rounded">&lt;title&gt;</code>, and <code className="font-mono-tabular bg-slate-100 px-1 rounded">&lt;meta name=&quot;description&quot;&gt;</code>.
                   </p>
                 </div>
 
@@ -8509,7 +9032,8 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                   {[
                     {
                       key: 'home',
-                      label: 'Home Page (#top)',
+                      label: 'Home Page',
+                      defaultSlug: '',
                       defaultTitle:
                         'FixPhoto Studio – Commercial Photo & Video Editing',
                       defaultDesc:
@@ -8517,7 +9041,8 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                     },
                     {
                       key: 'services_page',
-                      label: 'All Services Directory Page (#services)',
+                      label: 'Photo Editing Services Directory Page',
+                      defaultSlug: 'photo-editing-services',
                       defaultTitle:
                         'All Photo & Video Editing Services – FixPhoto Studio',
                       defaultDesc:
@@ -8525,7 +9050,8 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                     },
                     {
                       key: 'video_editing_page',
-                      label: 'Video Editing Studio Page (#video-editing)',
+                      label: 'Video Editing Studio Page',
+                      defaultSlug: 'video-editing-services',
                       defaultTitle:
                         '4K Video Editing & Color Grading – FixPhoto Studio',
                       defaultDesc:
@@ -8533,7 +9059,8 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                     },
                     {
                       key: 'portfolio_page',
-                      label: 'Photo & Video Portfolio Page (#portfolio)',
+                      label: 'Photo & Video Portfolio Page',
+                      defaultSlug: 'portfolio',
                       defaultTitle:
                         'Before & After Photo & Video Portfolio – FixPhoto Studio',
                       defaultDesc:
@@ -8541,7 +9068,8 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                     },
                     {
                       key: 'free_trial_page',
-                      label: 'Free Trial Page (#free-trial)',
+                      label: 'Free Trial Page',
+                      defaultSlug: 'free-trial',
                       defaultTitle:
                         'Free 5-Image Photo Editing Trial – FixPhoto Studio',
                       defaultDesc:
@@ -8549,7 +9077,8 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                     },
                     {
                       key: 'get_quote_page',
-                      label: 'Get a Quote Page (#get-quote)',
+                      label: 'Get a Quote Page',
+                      defaultSlug: 'get-quote',
                       defaultTitle:
                         'Instant Volume Quote Calculator – FixPhoto Studio',
                       defaultDesc:
@@ -8557,7 +9086,8 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                     },
                     {
                       key: 'blogs_page',
-                      label: 'Blogs Directory Page (/blogs · #blogs)',
+                      label: 'Blogs Directory Page',
+                      defaultSlug: 'blogs',
                       defaultTitle:
                         'Commercial Photo & Video Editing Blog – FixPhoto Studio',
                       defaultDesc:
@@ -8565,7 +9095,8 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                     },
                     {
                       key: 'portal',
-                      label: 'Client Portal Page (#client-portal)',
+                      label: 'Client Portal Page (Clipp Asia)',
+                      defaultSlug: 'client-portal',
                       defaultTitle:
                         'Client Portal & Live Batch Tracker – FixPhoto Studio',
                       defaultDesc:
@@ -8575,7 +9106,12 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                     const currentEntry = siteConfig.pageSeo?.[pageItem.key] || {
                       seoTitle: pageItem.defaultTitle,
                       seoMetaDescription: pageItem.defaultDesc,
+                      slug: pageItem.defaultSlug,
                     };
+                    const currentSlug =
+                      currentEntry.slug !== undefined
+                        ? currentEntry.slug
+                        : pageItem.defaultSlug;
                     const isEditingThisSeo =
                       editingSeoDraft?.type === 'main_page' &&
                       editingSeoDraft?.id === pageItem.key;
@@ -8589,10 +9125,16 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                             : 'bg-[#F8FAFC] border-slate-200'
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-xs font-bold text-[#001E5A]">
-                            {pageItem.label}
-                          </p>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-xs font-bold text-[#001E5A]">
+                              {pageItem.label}
+                            </p>
+                            <span className="px-2 py-0.5 rounded bg-blue-50 border border-blue-200 text-[11px] font-mono-tabular font-semibold text-[#0088FF]">
+                              https://fixphotostudio.com/
+                              {currentSlug ? `${currentSlug}/` : ''}
+                            </span>
+                          </div>
                           {!isEditingThisSeo ? (
                             <button
                               type="button"
@@ -8603,12 +9145,13 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                                   seoTitle: currentEntry.seoTitle,
                                   seoMetaDescription:
                                     currentEntry.seoMetaDescription,
+                                  slug: currentSlug,
                                 })
                               }
                               className="px-3 py-1 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0"
                             >
                               <Pencil className="w-3.5 h-3.5 text-[#0088FF]" />
-                              <span>Edit SEO</span>
+                              <span>Edit SEO &amp; URL</span>
                             </button>
                           ) : (
                             <button
@@ -8644,7 +9187,35 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                         ) : (
                           editingSeoDraft && (
                             <div className="space-y-3 pt-2 border-t border-blue-200">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                {pageItem.key !== 'home' && (
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-[#0088FF] mb-1">
+                                      Page URL Slug (domain/slug/)
+                                    </label>
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[11px] font-mono-tabular text-slate-500">
+                                        /
+                                      </span>
+                                      <input
+                                        type="text"
+                                        value={editingSeoDraft.slug || ''}
+                                        onChange={(e) =>
+                                          setEditingSeoDraft({
+                                            ...editingSeoDraft,
+                                            slug: e.target.value
+                                              .toLowerCase()
+                                              .replace(/[^a-z0-9-_]/g, '-'),
+                                          })
+                                        }
+                                        className="w-full px-2.5 py-1.5 text-xs font-mono-tabular font-bold text-[#001E5A] bg-white border border-blue-300 rounded-lg"
+                                      />
+                                      <span className="text-[11px] font-mono-tabular text-slate-500">
+                                        /
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
                                 <div>
                                   <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                                     SEO Title (&lt;title&gt;)
@@ -8689,12 +9260,20 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    const cleanedSlug =
+                                      pageItem.key === 'home'
+                                        ? ''
+                                        : sanitizeUrlSlug(
+                                            editingSeoDraft.slug ||
+                                              pageItem.defaultSlug
+                                          );
                                     const nextPageSeo = {
                                       ...(siteConfig.pageSeo || {}),
                                       [pageItem.key]: {
                                         seoTitle: editingSeoDraft.seoTitle,
                                         seoMetaDescription:
                                           editingSeoDraft.seoMetaDescription,
+                                        slug: cleanedSlug,
                                       },
                                     };
                                     onUpdateSiteConfig({
@@ -8702,14 +9281,14 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                                       pageSeo: nextPageSeo,
                                     });
                                     notifySaved(
-                                      `Saved & published SEO for "${pageItem.label}"!`
+                                      `Saved & published URL Slug (/${cleanedSlug ? `${cleanedSlug}/` : ''}) & SEO for "${pageItem.label}"!`
                                     );
                                     setEditingSeoDraft(null);
                                   }}
                                   className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5"
                                 >
                                   <CheckCircle2 className="w-3.5 h-3.5" />
-                                  <span>Save &amp; Publish SEO</span>
+                                  <span>Save &amp; Publish SEO &amp; URL</span>
                                 </button>
                               </div>
                             </div>
@@ -8721,14 +9300,14 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                 </div>
               </div>
 
-              {/* 2. All Individual Photo & Video Service Pages SEO */}
+              {/* 2. All Individual Photo & Video Service Pages SEO & URL Slugs */}
               <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5 shadow-xs">
                 <div className="border-b border-slate-200 pb-3">
                   <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
-                    02 · ALL {servicesList.length} PHOTO &amp; VIDEO SERVICE PAGES SEO
+                    02 · ALL {servicesList.length} PHOTO &amp; VIDEO SERVICE PAGES SEO &amp; URL SLUGS
                   </p>
                   <h2 className="text-lg font-bold text-[#001E5A]">
-                    Service Pages SEO List — Click Edit Icon to Modify Title &amp; Meta Description
+                    Service Pages URL Slug &amp; SEO List — Click Edit to Modify URL Slug (domain/slug/), Title &amp; Meta Description
                   </h2>
                 </div>
 
@@ -8753,13 +9332,13 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                             : 'bg-[#F8FAFC] border-slate-200'
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="text-xs font-bold text-[#001E5A]">
                               {srv.indexNumber} · {srv.title}
                             </span>
-                            <span className="ml-2 text-[11px] font-mono-tabular text-[#0088FF]">
-                              #service/{srv.slug}
+                            <span className="px-2 py-0.5 rounded bg-blue-50 border border-blue-200 text-[11px] font-mono-tabular font-semibold text-[#0088FF]">
+                              https://fixphotostudio.com/{srv.slug}/
                             </span>
                           </div>
 
@@ -8772,12 +9351,13 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                                   id: srv.slug,
                                   seoTitle: currentSeoTitle,
                                   seoMetaDescription: currentSeoDesc,
+                                  slug: srv.slug,
                                 })
                               }
                               className="px-3 py-1 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0"
                             >
                               <Pencil className="w-3.5 h-3.5 text-[#0088FF]" />
-                              <span>Edit SEO</span>
+                              <span>Edit SEO &amp; URL</span>
                             </button>
                           ) : (
                             <button
@@ -8803,7 +9383,33 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                         ) : (
                           editingSeoDraft && (
                             <div className="space-y-3 pt-2 border-t border-blue-200">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-[#0088FF] mb-1">
+                                    Service URL Slug (domain/slug/)
+                                  </label>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[11px] font-mono-tabular text-slate-500">
+                                      /
+                                    </span>
+                                    <input
+                                      type="text"
+                                      value={editingSeoDraft.slug || srv.slug}
+                                      onChange={(e) =>
+                                        setEditingSeoDraft({
+                                          ...editingSeoDraft,
+                                          slug: e.target.value
+                                            .toLowerCase()
+                                            .replace(/[^a-z0-9-_]/g, '-'),
+                                        })
+                                      }
+                                      className="w-full px-2.5 py-1.5 text-xs font-mono-tabular font-bold text-[#001E5A] bg-white border border-blue-300 rounded-lg"
+                                    />
+                                    <span className="text-[11px] font-mono-tabular text-slate-500">
+                                      /
+                                    </span>
+                                  </div>
+                                </div>
                                 <div>
                                   <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                                     SEO Title (&lt;title&gt;)
@@ -8848,11 +9454,16 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    const oldSlug = srv.slug;
+                                    const newSlug = sanitizeUrlSlug(
+                                      editingSeoDraft.slug || srv.slug
+                                    );
                                     onUpdateServicesList(
                                       servicesList.map((s) =>
-                                        s.slug === srv.slug
+                                        s.slug === oldSlug
                                           ? {
                                               ...s,
+                                              slug: newSlug,
                                               seoTitle:
                                                 editingSeoDraft.seoTitle,
                                               seoMetaDescription:
@@ -8861,15 +9472,31 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                                           : s
                                       )
                                     );
+                                    if (newSlug !== oldSlug) {
+                                      onUpdateMainMenuServices(
+                                        mainMenuServices.map((m) =>
+                                          m.targetSlug === oldSlug
+                                            ? { ...m, targetSlug: newSlug }
+                                            : m
+                                        )
+                                      );
+                                      onUpdateVideoShowreelProjects(
+                                        videoShowreelProjects.map((v) =>
+                                          v.serviceSlug === oldSlug
+                                            ? { ...v, serviceSlug: newSlug }
+                                            : v
+                                        )
+                                      );
+                                    }
                                     notifySaved(
-                                      `Saved & published SEO for service "${srv.shortNavTitle}"!`
+                                      `Saved URL (/${newSlug}/) & SEO for service "${srv.shortNavTitle}"!`
                                     );
                                     setEditingSeoDraft(null);
                                   }}
                                   className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5"
                                 >
                                   <CheckCircle2 className="w-3.5 h-3.5" />
-                                  <span>Save &amp; Publish SEO</span>
+                                  <span>Save &amp; Publish SEO &amp; URL</span>
                                 </button>
                               </div>
                             </div>
@@ -8881,14 +9508,14 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                 </div>
               </div>
 
-              {/* 3. All Blog Posts SEO */}
+              {/* 3. All Blog Posts SEO & URL Slugs */}
               <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5 shadow-xs">
                 <div className="border-b border-slate-200 pb-3">
                   <p className="text-xs font-mono-tabular font-bold text-[#0088FF]">
-                    03 · ALL {blogPosts.length} BLOG POSTS SEO
+                    03 · ALL {blogPosts.length} BLOG POSTS SEO &amp; URL SLUGS
                   </p>
                   <h2 className="text-lg font-bold text-[#001E5A]">
-                    Blog Posts SEO List — Click Edit Icon to Modify Title &amp; Meta Description
+                    Blog Posts SEO &amp; URL Slugs List — Click Edit to Modify URL Slug, Title &amp; Meta Description
                   </h2>
                 </div>
 
@@ -8911,13 +9538,13 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                             : 'bg-[#F8FAFC] border-slate-200'
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <div>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="text-xs font-bold text-[#001E5A]">
                               #{idx + 1} · {post.title}
                             </span>
-                            <span className="ml-2 text-[11px] font-mono-tabular text-[#0088FF]">
-                              {post.category}
+                            <span className="px-2 py-0.5 rounded bg-blue-50 border border-blue-200 text-[11px] font-mono-tabular font-semibold text-[#0088FF]">
+                              https://fixphotostudio.com/{post.slug}/
                             </span>
                           </div>
 
@@ -8930,12 +9557,13 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                                   id: post.id,
                                   seoTitle: currentBlogSeoTitle,
                                   seoMetaDescription: currentBlogSeoDesc,
+                                  slug: post.slug,
                                 })
                               }
                               className="px-3 py-1 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5 shrink-0"
                             >
                               <Pencil className="w-3.5 h-3.5 text-[#0088FF]" />
-                              <span>Edit SEO</span>
+                              <span>Edit SEO &amp; URL</span>
                             </button>
                           ) : (
                             <button
@@ -8961,7 +9589,33 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                         ) : (
                           editingSeoDraft && (
                             <div className="space-y-3 pt-2 border-t border-blue-200">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-[#0088FF] mb-1">
+                                    Blog URL Slug (domain/slug/)
+                                  </label>
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[11px] font-mono-tabular text-slate-500">
+                                      /
+                                    </span>
+                                    <input
+                                      type="text"
+                                      value={editingSeoDraft.slug || post.slug}
+                                      onChange={(e) =>
+                                        setEditingSeoDraft({
+                                          ...editingSeoDraft,
+                                          slug: e.target.value
+                                            .toLowerCase()
+                                            .replace(/[^a-z0-9-_]/g, '-'),
+                                        })
+                                      }
+                                      className="w-full px-2.5 py-1.5 text-xs font-mono-tabular font-bold text-[#001E5A] bg-white border border-blue-300 rounded-lg"
+                                    />
+                                    <span className="text-[11px] font-mono-tabular text-slate-500">
+                                      /
+                                    </span>
+                                  </div>
+                                </div>
                                 <div>
                                   <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                                     Blog SEO Title (&lt;title&gt;)
@@ -9006,11 +9660,15 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    const nextBlogSlug = sanitizeUrlSlug(
+                                      editingSeoDraft.slug || post.slug
+                                    );
                                     onUpdateBlogPosts(
                                       blogPosts.map((b) =>
                                         b.id === post.id
                                           ? {
                                               ...b,
+                                              slug: nextBlogSlug,
                                               seoTitle:
                                                 editingSeoDraft.seoTitle,
                                               seoMetaDescription:
@@ -9020,14 +9678,14 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                                       )
                                     );
                                     notifySaved(
-                                      `Saved & published SEO for blog "${post.title}"!`
+                                      `Saved URL (/${nextBlogSlug}/) & SEO for blog "${post.title}"!`
                                     );
                                     setEditingSeoDraft(null);
                                   }}
                                   className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5"
                                 >
                                   <CheckCircle2 className="w-3.5 h-3.5" />
-                                  <span>Save &amp; Publish SEO</span>
+                                  <span>Save &amp; Publish SEO &amp; URL</span>
                                 </button>
                               </div>
                             </div>
@@ -9456,6 +10114,94 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                         />
                       </div>
 
+                      {/* Role Preset Selector */}
+                      <div className="p-4 rounded-xl bg-[#F8FAFC] border border-blue-200 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <span className="text-[11px] font-mono-tabular font-bold text-[#0088FF] block">
+                              ROLE &amp; MODULE ACCESS CONTROL (HIDE UNSELECTED SYSTEM MENUS)
+                            </span>
+                            <p className="text-xs text-slate-600">
+                              Select a role preset or check the exact modules this user is allowed to view and manage. Unselected modules (such as Orders or Invoices) will be completely hidden for this user.
+                            </p>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-[#001E5A] mb-1.5">
+                            1. Quick Role Preset
+                          </label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {ADMIN_ROLE_PRESETS.map((preset) => {
+                              const isActivePreset =
+                                newAdminRoleLabel === preset.label;
+                              return (
+                                <button
+                                  key={preset.label}
+                                  type="button"
+                                  onClick={() => {
+                                    setNewAdminRoleLabel(preset.label);
+                                    setNewAdminAllowedTabs([...preset.tabs]);
+                                  }}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                                    isActivePreset
+                                      ? 'bg-[#001E5A] text-white border-[#001E5A]'
+                                      : 'bg-white text-slate-700 border-slate-300 hover:border-[#0088FF]'
+                                  }`}
+                                >
+                                  {preset.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-[#001E5A] mb-1.5">
+                            2. Select Exact Allowed Modules ({newAdminAllowedTabs.length} Selected)
+                          </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {ADMIN_MODULE_PERMISSION_OPTIONS.map((mod) => {
+                              const checked = newAdminAllowedTabs.includes(
+                                mod.id
+                              );
+                              return (
+                                <label
+                                  key={mod.id}
+                                  className={`p-2.5 rounded-lg border cursor-pointer flex items-start gap-2.5 text-xs transition-all ${
+                                    checked
+                                      ? 'bg-blue-50/70 border-[#0088FF] text-[#001E5A]'
+                                      : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      setNewAdminAllowedTabs((prev) =>
+                                        prev.includes(mod.id)
+                                          ? prev.filter((t) => t !== mod.id)
+                                          : [...prev, mod.id]
+                                      );
+                                      setNewAdminRoleLabel('Custom Role Access');
+                                    }}
+                                    className="mt-0.5 rounded border-slate-300 text-[#0088FF] focus:ring-[#0088FF]"
+                                  />
+                                  <div className="space-y-0.5">
+                                    <span className="font-bold block leading-tight">
+                                      {mod.label}
+                                    </span>
+                                    <span className="text-[10px] font-mono-tabular text-slate-400 uppercase block">
+                                      {mod.category}
+                                    </span>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
                       <button
                         type="submit"
                         className="px-5 py-2.5 rounded-xl bg-[#0088FF] hover:bg-[#001E5A] text-white text-xs font-bold transition-colors flex items-center gap-2"
@@ -9534,7 +10280,7 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                       Authorized Administrator Accounts ({adminAccounts.length})
                     </h3>
                     <p className="text-xs text-slate-500">
-                      Only the accounts listed below can sign in to the Admin Panel
+                      Only the accounts listed below can sign in to the Admin Panel. Click &ldquo;Edit Role &amp; Module Access&rdquo; on any sub-admin to update which pages/modules they can see.
                     </p>
                   </div>
                 </div>
@@ -9544,55 +10290,222 @@ export const AdminCmsPanel: React.FC<AdminCmsPanelProps> = ({
                     const isOwner =
                       acc.role === 'super_admin' ||
                       acc.email.toLowerCase() === 'asiaclipp@gmail.com';
+                    const isEditingPerm = editingSubAdminDraft?.id === acc.id;
+                    const accTabs =
+                      acc.allowedTabs && acc.allowedTabs.length > 0
+                        ? acc.allowedTabs
+                        : ALL_ADMIN_TABS;
+
                     return (
                       <div
                         key={acc.id}
-                        className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 flex flex-wrap items-center justify-between gap-4"
+                        className="p-4 rounded-xl bg-[#F8FAFC] border border-slate-200 space-y-3"
                       >
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-[#001E5A]">
-                              {acc.name}
-                            </span>
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-mono-tabular font-bold ${
-                                isOwner
-                                  ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                                  : 'bg-blue-100 text-[#001E5A] border border-blue-200'
-                              }`}
-                            >
-                              {isOwner
-                                ? 'MAIN SUPER ADMIN (OWNER)'
-                                : 'AUTHORIZED SUB-ADMIN'}
-                            </span>
-                          </div>
-                          <p className="text-xs font-mono-tabular text-slate-700">
-                            Email: <strong>{acc.email}</strong>
-                            {isMainSuperAdmin && (
-                              <span className="ml-4 text-slate-500">
-                                Password: <strong>{acc.password}</strong>
+                        <div className="flex flex-wrap items-center justify-between gap-4">
+                          <div className="space-y-1.5">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-bold text-[#001E5A]">
+                                {acc.name}
                               </span>
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-mono-tabular font-bold ${
+                                  isOwner
+                                    ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                    : 'bg-blue-100 text-[#001E5A] border border-blue-200'
+                                }`}
+                              >
+                                {isOwner
+                                  ? 'MAIN SUPER ADMIN (FULL ACCESS)'
+                                  : acc.roleLabel || 'AUTHORIZED SUB-ADMIN'}
+                              </span>
+                            </div>
+                            <p className="text-xs font-mono-tabular text-slate-700">
+                              Email: <strong>{acc.email}</strong>
+                              {isMainSuperAdmin && (
+                                <span className="ml-4 text-slate-500">
+                                  Password: <strong>{acc.password}</strong>
+                                </span>
+                              )}
+                            </p>
+                            {!isOwner && (
+                              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                <span className="text-[10px] font-mono-tabular text-slate-500 uppercase font-bold mr-1">
+                                  Allowed Modules ({accTabs.length}):
+                                </span>
+                                {ADMIN_MODULE_PERMISSION_OPTIONS.filter((opt) =>
+                                  accTabs.includes(opt.id)
+                                ).map((opt) => (
+                                  <span
+                                    key={opt.id}
+                                    className="px-2 py-0.5 rounded bg-white border border-blue-200 text-[10px] font-semibold text-[#001E5A]"
+                                  >
+                                    {opt.label.split('(')[0].trim()}
+                                  </span>
+                                ))}
+                              </div>
                             )}
-                          </p>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            {isOwner ? (
+                              <span className="px-3 py-1.5 rounded-lg bg-slate-200/70 text-slate-600 text-xs font-semibold inline-flex items-center gap-1.5">
+                                <Lock className="w-3.5 h-3.5" />
+                                <span>Permanent Main Admin</span>
+                              </span>
+                            ) : isMainSuperAdmin ? (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (isEditingPerm) {
+                                      setEditingSubAdminDraft(null);
+                                    } else {
+                                      setEditingSubAdminDraft({
+                                        ...acc,
+                                        roleLabel:
+                                          acc.roleLabel || 'Authorized Sub-Admin',
+                                        allowedTabs: [...accTabs],
+                                      });
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg bg-white hover:bg-[#001E5A] text-[#001E5A] hover:text-white border border-slate-300 text-xs font-bold transition-colors flex items-center gap-1.5"
+                                >
+                                  <Pencil className="w-3.5 h-3.5 text-[#0088FF]" />
+                                  <span>
+                                    {isEditingPerm
+                                      ? 'Close Editor'
+                                      : 'Edit Role & Module Access'}
+                                  </span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteAdminAccount(acc)}
+                                  className="px-3.5 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 text-xs font-bold transition-colors flex items-center gap-1.5"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <span>Remove Admin Access</span>
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
                         </div>
 
-                        <div>
-                          {isOwner ? (
-                            <span className="px-3 py-1.5 rounded-lg bg-slate-200/70 text-slate-600 text-xs font-semibold inline-flex items-center gap-1.5">
-                              <Lock className="w-3.5 h-3.5" />
-                              <span>Permanent Main Admin</span>
-                            </span>
-                          ) : isMainSuperAdmin ? (
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteAdminAccount(acc)}
-                              className="px-3.5 py-2 rounded-lg bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 text-xs font-bold transition-colors flex items-center gap-1.5"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                              <span>Remove Admin Access</span>
-                            </button>
-                          ) : null}
-                        </div>
+                        {/* Inline Role & Module Access Editor for Existing Sub-Admin */}
+                        {isEditingPerm &&
+                          editingSubAdminDraft &&
+                          !isOwner &&
+                          isMainSuperAdmin && (
+                            <div className="pt-3 border-t border-blue-200 bg-white p-4 rounded-xl space-y-3">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-xs font-bold text-[#001E5A]">
+                                  Edit Allowed Modules for {acc.name} ({acc.email})
+                                </span>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {ADMIN_ROLE_PRESETS.map((preset) => (
+                                    <button
+                                      key={preset.label}
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingSubAdminDraft({
+                                          ...editingSubAdminDraft,
+                                          roleLabel: preset.label,
+                                          allowedTabs: [...preset.tabs],
+                                        });
+                                      }}
+                                      className={`px-2.5 py-1 rounded text-[11px] font-bold border ${
+                                        editingSubAdminDraft.roleLabel ===
+                                        preset.label
+                                          ? 'bg-[#001E5A] text-white border-[#001E5A]'
+                                          : 'bg-[#F8FAFC] text-slate-700 border-slate-300 hover:border-[#0088FF]'
+                                      }`}
+                                    >
+                                      {preset.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                {ADMIN_MODULE_PERMISSION_OPTIONS.map((mod) => {
+                                  const draftTabs =
+                                    editingSubAdminDraft.allowedTabs || [];
+                                  const checked = draftTabs.includes(mod.id);
+                                  return (
+                                    <label
+                                      key={mod.id}
+                                      className={`p-2 rounded-lg border cursor-pointer flex items-center gap-2 text-xs ${
+                                        checked
+                                          ? 'bg-blue-50/70 border-[#0088FF] text-[#001E5A] font-semibold'
+                                          : 'bg-[#F8FAFC] border-slate-200 text-slate-500'
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={checked}
+                                        onChange={() => {
+                                          const current =
+                                            editingSubAdminDraft.allowedTabs ||
+                                            [];
+                                          const nextTabs = current.includes(
+                                            mod.id
+                                          )
+                                            ? current.filter((t) => t !== mod.id)
+                                            : [...current, mod.id];
+                                          setEditingSubAdminDraft({
+                                            ...editingSubAdminDraft,
+                                            roleLabel: 'Custom Role Access',
+                                            allowedTabs: nextTabs,
+                                          });
+                                        }}
+                                        className="rounded border-slate-300 text-[#0088FF]"
+                                      />
+                                      <span>{mod.label}</span>
+                                    </label>
+                                  );
+                                })}
+                              </div>
+
+                              <div className="flex justify-end gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingSubAdminDraft(null)}
+                                  className="px-3.5 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold text-slate-600"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const finalTabs =
+                                      editingSubAdminDraft.allowedTabs &&
+                                      editingSubAdminDraft.allowedTabs.length > 0
+                                        ? editingSubAdminDraft.allowedTabs
+                                        : (['menu_and_services'] as AdminTab[]);
+                                    const updated = adminAccounts.map((a) =>
+                                      a.id === acc.id
+                                        ? {
+                                            ...a,
+                                            roleLabel:
+                                              editingSubAdminDraft.roleLabel ||
+                                              'Custom Role Access',
+                                            allowedTabs: finalTabs,
+                                          }
+                                        : a
+                                    );
+                                    saveAdminAccountsList(updated);
+                                    setEditingSubAdminDraft(null);
+                                    notifySaved(
+                                      `Updated role (${editingSubAdminDraft.roleLabel}) & module permissions (${finalTabs.length} modules) for ${acc.name}!`
+                                    );
+                                  }}
+                                  className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5"
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Save Role &amp; Module Permissions</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
                       </div>
                     );
                   })}

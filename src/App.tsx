@@ -221,49 +221,7 @@ export default function App() {
     return INITIAL_BLOG_POSTS[0].slug;
   });
 
-  const [activePage, setActivePage] = useState<ActivePageRoute>(() => {
-    const path = window.location.pathname.toLowerCase();
-    const hash = window.location.hash.toLowerCase();
-    const search = window.location.search.toLowerCase();
-    if (
-      path.includes('admin') ||
-      hash.includes('admin') ||
-      search.includes('admin')
-    ) {
-      return 'admin_login';
-    }
-    if (hash.startsWith('#blogs/') && hash.length > 7) {
-      return 'blog_detail_page';
-    }
-    if (
-      path.endsWith('/blogs') ||
-      hash === '#blogs' ||
-      hash === '#blog'
-    ) {
-      return 'blogs_page';
-    }
-    return 'home';
-  });
-
-  useEffect(() => {
-    const onHashChange = () => {
-      const h = window.location.hash.toLowerCase();
-      if (
-        h === '#admin' ||
-        h === '#admin-login' ||
-        h === '#admin-dashboard'
-      ) {
-        setActivePage('admin_login');
-      } else if (h.startsWith('#blogs/') && h.length > 7) {
-        setActiveBlogSlug(h.slice(7));
-        setActivePage('blog_detail_page');
-      } else if (h === '#blogs') {
-        setActivePage('blogs_page');
-      }
-    };
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
+  const [activePage, setActivePage] = useState<ActivePageRoute>('home');
   const [photoMenuOpen, setPhotoMenuOpen] = useState<boolean>(false);
   const [videoMenuOpen, setVideoMenuOpen] = useState<boolean>(false);
 
@@ -492,27 +450,214 @@ export default function App() {
     }
   }, [orderApprovalMap]);
 
-  // Listen to URL /admin-login or #admin-login changes
+  // Resolve URL Pathname / Slug into Multi-Page Route on Initial Load & Browser Back/Forward
+  const getMainPageSlug = (
+    key:
+      | 'home'
+      | 'services_page'
+      | 'video_editing_page'
+      | 'portfolio_page'
+      | 'free_trial_page'
+      | 'get_quote_page'
+      | 'blogs_page'
+      | 'portal'
+      | 'reviews_page'
+  ): string => {
+    const defaults: Record<string, string> = {
+      home: '',
+      services_page: 'photo-editing-services',
+      video_editing_page: 'video-editing-services',
+      portfolio_page: 'portfolio',
+      free_trial_page: 'free-trial',
+      get_quote_page: 'get-quote',
+      blogs_page: 'blogs',
+      portal: 'client-portal',
+      reviews_page: 'reviews',
+    };
+    const custom = siteConfig.pageSeo?.[key]?.slug;
+    if (custom !== undefined && key !== 'home') {
+      return custom.replace(/^\/+|\/+$/g, '').toLowerCase();
+    }
+    return defaults[key] || '';
+  };
+
   useEffect(() => {
-    const checkAdminRoute = () => {
-      const path = window.location.pathname.toLowerCase();
-      const hash = window.location.hash.toLowerCase();
+    const syncRouteFromLocation = () => {
+      const rawPath = window.location.pathname
+        .replace(/^\/+|\/+$/g, '')
+        .toLowerCase();
+      const rawHash = window.location.hash
+        .replace(/^#+|\/+$/g, '')
+        .toLowerCase();
       const search = window.location.search.toLowerCase();
+
       if (
-        path.includes('admin-login') ||
-        hash.includes('admin-login') ||
-        search.includes('admin-login')
+        rawPath === 'admin' ||
+        rawPath === 'admin-login' ||
+        rawPath === 'admin-dashboard' ||
+        rawHash.includes('admin') ||
+        search.includes('admin')
       ) {
         setActivePage('admin_login');
+        return;
+      }
+
+      const candidateSlug = rawPath || rawHash;
+      if (!candidateSlug || candidateSlug === 'top') {
+        setActivePage('home');
+        return;
+      }
+
+      // Check Main Pages by custom or default slug
+      if (
+        candidateSlug === getMainPageSlug('free_trial_page') ||
+        candidateSlug === 'free-trial'
+      ) {
+        setActivePage('free_trial_page');
+        return;
+      }
+      if (
+        candidateSlug === getMainPageSlug('get_quote_page') ||
+        candidateSlug === 'get-quote'
+      ) {
+        setActivePage('get_quote_page');
+        return;
+      }
+      if (
+        candidateSlug === getMainPageSlug('portfolio_page') ||
+        candidateSlug === 'portfolio'
+      ) {
+        setActivePage('portfolio_page');
+        return;
+      }
+      if (
+        candidateSlug === getMainPageSlug('services_page') ||
+        candidateSlug === 'services' ||
+        candidateSlug === 'photo-editing-services'
+      ) {
+        setActivePage('services_page');
+        return;
+      }
+      if (
+        candidateSlug === getMainPageSlug('video_editing_page') ||
+        candidateSlug === 'video-editing' ||
+        candidateSlug === 'video-editing-services'
+      ) {
+        setActivePage('video_editing_page');
+        return;
+      }
+      if (
+        candidateSlug === getMainPageSlug('portal') ||
+        candidateSlug === 'client-portal' ||
+        candidateSlug === 'portal'
+      ) {
+        setActivePage('portal');
+        return;
+      }
+      if (
+        candidateSlug === getMainPageSlug('blogs_page') ||
+        candidateSlug === 'blogs' ||
+        candidateSlug === 'blog'
+      ) {
+        setActivePage('blogs_page');
+        return;
+      }
+      if (
+        candidateSlug === getMainPageSlug('reviews_page') ||
+        candidateSlug === 'reviews'
+      ) {
+        setActivePage('reviews_page');
+        return;
+      }
+
+      // Check Service Pages (including /service/<slug> or direct /<slug>/)
+      const cleanServiceCandidate = candidateSlug.startsWith('service/')
+        ? candidateSlug.slice(8)
+        : candidateSlug;
+      const matchedService = servicesList.find(
+        (s) => s.slug.toLowerCase() === cleanServiceCandidate
+      );
+      if (matchedService) {
+        setActiveServiceSlug(matchedService.slug);
+        setActivePage('service_detail');
+        return;
+      }
+
+      // Check Blog Posts (including /blogs/<slug> or direct /<slug>/)
+      const cleanBlogCandidate = candidateSlug.startsWith('blogs/')
+        ? candidateSlug.slice(6)
+        : candidateSlug;
+      const matchedBlog = blogPosts.find(
+        (b) => b.slug.toLowerCase() === cleanBlogCandidate
+      );
+      if (matchedBlog) {
+        setActiveBlogSlug(matchedBlog.slug);
+        setActivePage('blog_detail_page');
+        return;
       }
     };
-    window.addEventListener('popstate', checkAdminRoute);
-    window.addEventListener('hashchange', checkAdminRoute);
+
+    syncRouteFromLocation();
+    window.addEventListener('popstate', syncRouteFromLocation);
+    window.addEventListener('hashchange', syncRouteFromLocation);
     return () => {
-      window.removeEventListener('popstate', checkAdminRoute);
-      window.removeEventListener('hashchange', checkAdminRoute);
+      window.removeEventListener('popstate', syncRouteFromLocation);
+      window.removeEventListener('hashchange', syncRouteFromLocation);
     };
-  }, []);
+  }, [servicesList, blogPosts, siteConfig.pageSeo]);
+
+  // Push Clean Multi-Page URL Pathname (domain/<slug>/) whenever activePage / slug changes
+  useEffect(() => {
+    let targetPath = '/';
+    switch (activePage) {
+      case 'home':
+        targetPath = '/';
+        break;
+      case 'services_page':
+        targetPath = `/${getMainPageSlug('services_page')}/`;
+        break;
+      case 'video_editing_page':
+        targetPath = `/${getMainPageSlug('video_editing_page')}/`;
+        break;
+      case 'portfolio_page':
+        targetPath = `/${getMainPageSlug('portfolio_page')}/`;
+        break;
+      case 'free_trial_page':
+        targetPath = `/${getMainPageSlug('free_trial_page')}/`;
+        break;
+      case 'get_quote_page':
+        targetPath = `/${getMainPageSlug('get_quote_page')}/`;
+        break;
+      case 'blogs_page':
+        targetPath = `/${getMainPageSlug('blogs_page')}/`;
+        break;
+      case 'portal':
+        targetPath = `/${getMainPageSlug('portal')}/`;
+        break;
+      case 'reviews_page':
+        targetPath = `/${getMainPageSlug('reviews_page')}/`;
+        break;
+      case 'service_detail':
+        targetPath = `/${activeServiceSlug}/`;
+        break;
+      case 'blog_detail_page':
+        targetPath = `/${activeBlogSlug}/`;
+        break;
+      case 'admin_login':
+        targetPath = '/admin-login/';
+        break;
+      default:
+        targetPath = '/';
+    }
+
+    try {
+      if (window.location.pathname !== targetPath) {
+        window.history.pushState({ page: activePage }, '', targetPath);
+      }
+    } catch {
+      // ignore iframe history restrictions if any
+    }
+  }, [activePage, activeServiceSlug, activeBlogSlug, siteConfig.pageSeo]);
 
   const handleResetAllCmsToDefaults = () => {
     setSiteConfig(DEFAULT_SITE_CONFIG);
@@ -1059,11 +1204,6 @@ export default function App() {
   };
 
   const navigateToAllBlogsPage = () => {
-    try {
-      window.history.pushState(null, '', '#blogs');
-    } catch {
-      // ignore
-    }
     setActivePage('blogs_page');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -1077,11 +1217,6 @@ export default function App() {
           : b
       )
     );
-    try {
-      window.history.pushState(null, '', `#blogs/${slug}`);
-    } catch {
-      // ignore
-    }
     setActivePage('blog_detail_page');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -1609,6 +1744,42 @@ export default function App() {
           !n.title.includes(order.orderNumber)
       )
     );
+  };
+
+  const handleSubmitInvoicePaymentProof = async (
+    order: OrderDoc,
+    payload: { fileName: string; dataUrl: string; note: string }
+  ) => {
+    const submittedAt = new Date().toISOString();
+    setOrders((prev) =>
+      prev.map((o) =>
+        o.id === order.id
+          ? {
+              ...o,
+              paymentProofFileName: payload.fileName,
+              paymentProofDataUrl: payload.dataUrl,
+              paymentProofNote: payload.note,
+              paymentProofSubmittedAt: submittedAt,
+              updatedAt: new Date(),
+            }
+          : o
+      )
+    );
+
+    const proofNotif: NotificationAlertDoc = {
+      id: `notif_payproof_${Date.now()}`,
+      userId: order.clientId || activeClientId,
+      type: 'payment_receipt',
+      title: `Payment Proof Uploaded — Order ${order.orderNumber}`,
+      message: `Your payment receipt (${payload.fileName})${
+        payload.note ? ` · Note: "${payload.note}"` : ''
+      } has been attached to Invoice ${order.orderNumber}. Studio Admin will verify your payment and update your invoice status to PAID.`,
+      amountFormatted: `$${order.totalPrice.toFixed(2)} USD`,
+      invoiceRef: order.orderNumber,
+      read: false,
+      createdAt: new Date(),
+    };
+    setNotifications((prev) => [proofNotif, ...prev]);
   };
 
   const handleUpdateInvoiceStatus = async (
@@ -3006,23 +3177,29 @@ export default function App() {
               Portfolio
             </button>
 
-            {/* 4. Free Trial Popup */}
+            {/* 4. Free Trial Standalone Page (/free-trial/) */}
             <button
               type="button"
-              onClick={() => setFreeTrialModalOpen(true)}
+              onClick={() => {
+                setActivePage('free_trial_page');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
               className={`hover:text-[#0088FF] hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0 ${
-                freeTrialModalOpen ? 'text-[#0088FF] underline' : ''
+                activePage === 'free_trial_page' ? 'text-[#0088FF] underline' : ''
               }`}
             >
               Free Trial
             </button>
 
-            {/* 5. Get a Quote Popup */}
+            {/* 5. Get a Quote Standalone Page (/get-quote/) */}
             <button
               type="button"
-              onClick={() => setGetQuoteModalOpen(true)}
+              onClick={() => {
+                setActivePage('get_quote_page');
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
               className={`hover:text-[#0088FF] hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0 ${
-                getQuoteModalOpen ? 'text-[#0088FF] underline' : ''
+                activePage === 'get_quote_page' ? 'text-[#0088FF] underline' : ''
               }`}
             >
               Get a Quote
@@ -3068,8 +3245,14 @@ export default function App() {
             mainMenuPhotoServices={mainMenuServices}
             onSelectServicePage={(slug) => navigateToServicePage(slug)}
             onOrderService={(cat) => handleOpenOrderWithService(cat)}
-            onOpenFreeTrial={() => setFreeTrialModalOpen(true)}
-            onOpenGetQuote={() => setGetQuoteModalOpen(true)}
+            onOpenFreeTrial={() => {
+              setActivePage('free_trial_page');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onOpenGetQuote={() => {
+              setActivePage('get_quote_page');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
             onOpenVideoStudioHub={() => {
               setActivePage('video_editing_page');
               window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -3089,6 +3272,63 @@ export default function App() {
             onOpenNewOrderModal={() => setNewOrderModalOpen(true)}
             onBackToHome={() => {
               setActivePage('home');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+          />
+        </main>
+      ) : activePage === 'free_trial_page' ? (
+        <main className="flex-1">
+          <FreeTrialPage
+            mode="page"
+            isOpen={true}
+            onClose={() => {
+              setActivePage('home');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            services={servicesList}
+            isAuthenticatedClient={isClientAuthenticated}
+            clientProfileData={activeClientProfileData}
+            onSubmitPublicQuery={async (q) => {
+              const created = await handleSubmitPublicQuery({
+                source: 'free_trial_popup',
+                ...q,
+              });
+              return { queryNumber: created.queryNumber };
+            }}
+            onSubmitTrialOrder={async (payload) => {
+              await handleCreateOrder(payload, {
+                redirectToPortal: isClientAuthenticated,
+              });
+            }}
+            onExploreService={(slug) => navigateToServicePage(slug)}
+          />
+        </main>
+      ) : activePage === 'get_quote_page' ? (
+        <main className="flex-1">
+          <GetQuotePage
+            mode="page"
+            isOpen={true}
+            onClose={() => {
+              setActivePage('home');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            services={servicesList}
+            isAuthenticatedClient={isClientAuthenticated}
+            clientProfileData={activeClientProfileData}
+            onSubmitPublicQuery={async (q) => {
+              const created = await handleSubmitPublicQuery({
+                source: 'custom_quote_popup',
+                ...q,
+              });
+              return { queryNumber: created.queryNumber };
+            }}
+            onSubmitQuoteOrder={async (payload) => {
+              await handleCreateOrder(payload, {
+                redirectToPortal: isClientAuthenticated,
+              });
+            }}
+            onOpenFreeTrial={() => {
+              setActivePage('free_trial_page');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
           />
@@ -3129,6 +3369,7 @@ export default function App() {
               setPortalClientWebsite(session?.website || '');
             }}
             onUpdateClientProfile={handleUpdateClientProfile}
+            onSubmitInvoicePaymentProof={handleSubmitInvoicePaymentProof}
             onOpenAdminDashboard={() => {
               setActivePage('admin_login');
               window.scrollTo({ top: 0, behavior: 'smooth' });

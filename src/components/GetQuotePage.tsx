@@ -19,6 +19,7 @@ import {
 import { ServiceDefinition } from '../data/studioCatalog';
 
 interface GetQuotePageProps {
+  mode?: 'page' | 'modal';
   isOpen?: boolean;
   onClose?: () => void;
   services: ServiceDefinition[];
@@ -73,6 +74,7 @@ interface QuoteLineItem {
 }
 
 export const GetQuotePage: React.FC<GetQuotePageProps> = ({
+  mode = 'modal',
   isOpen = true,
   onClose,
   services,
@@ -516,26 +518,48 @@ export const GetQuotePage: React.FC<GetQuotePageProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#00143D]/70 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="bg-white border border-[#DCE6F2] rounded-2xl max-w-5xl w-full p-6 md:p-8 shadow-xl my-8">
-        {/* Top Modal Header */}
+    <div
+      className={
+        mode === 'page'
+          ? 'py-10 max-w-[1280px] mx-auto px-6'
+          : 'fixed inset-0 z-50 flex items-center justify-center bg-[#00143D]/70 backdrop-blur-xs p-4 overflow-y-auto'
+      }
+    >
+      <div
+        className={
+          mode === 'page'
+            ? 'bg-white border border-[#DCE6F2] rounded-2xl w-full p-6 md:p-10 shadow-xs'
+            : 'bg-white border border-[#DCE6F2] rounded-2xl max-w-5xl w-full p-6 md:p-8 shadow-xl my-8'
+        }
+      >
+        {/* Top Header */}
         <div className="flex items-start justify-between gap-4 pb-5 border-b border-[#DCE6F2]">
           <div>
             <p className="text-xs font-mono-tabular text-[#0088FF] font-semibold">
               MULTI-SERVICE CUSTOM VOLUME QUOTE BUILDER · UP TO 25% BULK DISCOUNT
             </p>
-            <h2 className="text-xl font-bold text-[#001E5A] mt-1">
+            <h1 className="text-xl md:text-2xl font-bold text-[#001E5A] mt-1">
               Get an Instant Custom Studio Quote & Lock Enterprise Pricing
-            </h2>
+            </h1>
           </div>
-          <button
-            type="button"
-            onClick={handleDismiss}
-            className="p-2 text-slate-500 hover:text-[#001E5A] rounded-lg border border-[#DCE6F2] transition-colors"
-            aria-label="Close Get a Quote popup"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {mode === 'page' && onBackToHome ? (
+            <button
+              type="button"
+              onClick={onBackToHome}
+              className="px-4 py-2 text-xs font-semibold text-[#001E5A] bg-[#F5F9FD] hover:bg-[#001E5A] hover:text-white rounded-lg border border-[#DCE6F2] transition-colors shrink-0"
+            >
+              ← Back to Home Page
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleDismiss}
+              className="p-2 text-slate-500 hover:text-[#001E5A] rounded-lg border border-[#DCE6F2] transition-colors"
+              aria-label="Close Get a Quote popup"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         <form
